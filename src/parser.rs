@@ -1,4 +1,5 @@
 use crate::lexer::Lexer;
+use crate::symbol_table::SymbolTable;
 use crate::types::{Instruction, OpCode, Operator, Symbol, SymbolType, TokenType};
 
 pub struct CodeGenerator {
@@ -41,7 +42,7 @@ pub struct ParseError {
 pub struct Parser<'a> {
     lexer: Lexer<'a>,
     pub generator: CodeGenerator,
-    table: Vec<Symbol>,
+    symbol_table: SymbolTable,
     level: usize, // Current nesting level
     pub errors: Vec<ParseError>,
 }
@@ -53,7 +54,7 @@ impl<'a> Parser<'a> {
         Self {
             lexer,
             generator: CodeGenerator::new(),
-            table: Vec::new(),
+            symbol_table: SymbolTable::new(),
             level: 0,
             errors: Vec::new(),
         }
@@ -118,18 +119,31 @@ impl<'a> Parser<'a> {
         self.generator.emit(f, l, a);
     }
 
-    fn enter(&mut self, name: String, kind: SymbolType) {
-        self.table.push(Symbol { name, kind });
+    fn enter(&mut self, name: String, kind: SymbolType) -> ParseResult {
+        if let Err(msg) = self.symbol_table.define(Symbol { name, kind }) {
+            self.error(&msg)
+        } else {
+            Ok(())
+        }
     }
 
     fn position(&self, name: &str) -> Option<(usize, &Symbol)> {
-        // Search from top of stack (end of vector) to find most local variable
-        for (i, sym) in self.table.iter().enumerate().rev() {
-            if sym.name == name {
-                return Some((i, sym));
-            }
+        if let Some(sym) = self.symbol_table.resolve(name) {
+            // We need to return (level, symbol).
+            // But `position` originally returned (index, symbol).
+            // The caller uses `index`? No, let's check usage.
+            // Usage: `let (level, addr) = if let Some((_, sym)) = self.position(&name) { ... }`
+            // The caller ignores the index!
+            // Wait, let's check `statement` and `factor`.
+            // `let (level, addr) = if let Some((_, sym)) = self.position(&name)`
+            // Yes, the first element of the tuple is ignored.
+            // So we can just return `(0, sym)` or change the signature.
+            // Let's change the signature to return `Option<&Symbol>`.
+            // But wait, I need to check all call sites.
+            Some((0, sym))
+        } else {
+            None
         }
-        None
     }
 
     pub fn parse(&mut self) -> ParseResult {
@@ -155,7 +169,7 @@ impl<'a> Parser<'a> {
 
     // <block> → [<condecl>][<vardecl>][<proc>]<body>
     fn block(&mut self) -> ParseResult {
-        let tx0 = self.table.len(); // Save symbol table index
+        // let tx0 = self.table.len(); // Save symbol table index (No longer needed with Scope Stack)
         let jmp_addr = self.generator.next_address();
         self.emit(OpCode::JMP, 0, 0); // Jump to start of body (placeholder)
 
@@ -215,8 +229,8 @@ impl<'a> Parser<'a> {
 
         self.emit(OpCode::OPR, 0, Operator::RET as i64); // Return
 
-        // Restore symbol table
-        self.table.truncate(tx0);
+        // Restore symbol table (No longer needed with Scope Stack, handled by exit_scope in proc_decl)
+        // self.table.truncate(tx0);
         Ok(())
     }
 
@@ -234,7 +248,7 @@ impl<'a> Parser<'a> {
                 }
 
                 if let TokenType::Number(val) = self.lexer.current_token {
-                    self.enter(name, SymbolType::Constant { val });
+                    self.enter(name, SymbolType::Constant { val })?;
                     self.next();
                 } else {
                     self.error("Expected number")?;
@@ -264,7 +278,7 @@ impl<'a> Parser<'a> {
                         level: self.level,
                         addr: 3 + vars as i64,
                     },
-                );
+                )?;
                 vars += 1;
                 self.next();
             } else {
@@ -299,9 +313,10 @@ impl<'a> Parser<'a> {
                     level: self.level,
                     addr: self.generator.next_address() as i64,
                 },
-            );
+            )?;
 
             self.level += 1;
+            self.symbol_table.enter_scope(); // Enter scope for parameters and body
 
             let mut params = Vec::new();
             if self.lexer.current_token == TokenType::LParen {
@@ -336,12 +351,13 @@ impl<'a> Parser<'a> {
                         level: self.level,
                         addr,
                     },
-                );
+                )?;
             }
 
             self.block()?;
 
             self.expect(TokenType::Semicolon)?;
+            self.symbol_table.exit_scope(); // Exit scope for parameters and body
             self.level -= 1;
         }
         Ok(())
