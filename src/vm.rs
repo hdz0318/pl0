@@ -256,3 +256,27 @@ impl VM {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::{Instruction, OpCode};
+
+    #[test]
+    fn test_vm_arithmetic() {
+        // 10 + 20
+        let code = vec![
+            Instruction::new(OpCode::LIT, 0, 10),
+            Instruction::new(OpCode::LIT, 0, 20),
+            Instruction::new(OpCode::OPR, 0, 2), // ADD
+        ];
+        let mut vm = VM::new(code);
+
+        // Step through instructions
+        vm.step(); // LIT 10
+        vm.step(); // LIT 20
+        vm.step(); // ADD
+
+        assert_eq!(vm.stack[vm.sp - 1], 30);
+    }
+}

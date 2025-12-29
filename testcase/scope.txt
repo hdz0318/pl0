@@ -1,0 +1,25 @@
+program complex;
+const m := 100;
+var a, b;
+
+procedure outer(x);
+  var i;
+  procedure inner(y);
+  begin
+    b := b + y * m
+  end;
+begin
+  i := 0;
+  while i < x do
+  begin
+    call inner(i);
+    i := i + 1
+  end
+end;
+
+begin
+  read(a);
+  b := 0;
+  call outer(a);
+  write(b)
+end

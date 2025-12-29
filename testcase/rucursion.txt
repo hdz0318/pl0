@@ -1,0 +1,20 @@
+program factorial;
+var n, ans;
+
+procedure fact(k);
+var temp;
+begin
+  if k = 0 then
+    ans := 1
+  else
+    begin
+      call fact(k - 1);
+      ans := k * ans
+    end
+end;
+
+begin
+  read(n);
+  call fact(n);
+  write(n, ans)
+end

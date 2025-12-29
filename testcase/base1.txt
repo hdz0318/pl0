@@ -1,0 +1,9 @@
+program test1;
+const a := 10, b := 20;
+var x, y, z;
+begin
+  read(x);
+  y := a * x + b;
+  z := y / 2;
+  write(x, y, z)
+end

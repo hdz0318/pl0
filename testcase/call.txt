@@ -1,0 +1,16 @@
+program test3;
+var x, y, res;
+
+procedure multiply(a, b);
+begin
+  res := a * b;
+  write(a, b, res)
+end;
+
+begin
+  read(x, y);
+  if x > y then
+    call multiply(x, y)
+  else
+    call multiply(y, x)
+end

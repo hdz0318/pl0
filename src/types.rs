@@ -1,4 +1,4 @@
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum TokenType {
@@ -6,6 +6,7 @@ pub enum TokenType {
     Const,
     Var,
     Procedure,
+    Program,
     Begin,
     End,
     If,

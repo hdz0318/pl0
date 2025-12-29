@@ -135,6 +135,7 @@ impl<'a> Lexer<'a> {
         }
 
         self.current_token = match ident.as_str() {
+            "program" => TokenType::Program,
             "const" => TokenType::Const,
             "var" => TokenType::Var,
             "procedure" => TokenType::Procedure,

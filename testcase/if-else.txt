@@ -1,0 +1,19 @@
+program test2;
+var n, sum, i;
+begin
+  read(n);
+  if n <= 0 then
+    write(0)
+  else
+    begin
+      sum := 0;
+      i := 1;
+      while i <= n do
+      begin
+        if odd i then
+          sum := sum + i;
+        i := i + 1
+      end;
+      write(sum)
+    end
+end

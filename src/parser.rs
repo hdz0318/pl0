@@ -61,44 +61,19 @@ impl<'a> Parser<'a> {
 
     // <prog> → program <id>；<block>
     fn program(&mut self) {
-        if self.lexer.current_token == TokenType::Unknown {
-            // Handle empty or invalid start
-        }
-
-        // Syllabus says: <prog> → program <id>；<block>
-        // But standard PL/0 often starts directly with block.
-        // The syllabus explicitly adds "program <id>;".
-
-        if let TokenType::Identifier(ref s) = self.lexer.current_token {
-            if s == "program" {
-                // It was lexed as identifier because "program" wasn't in my keyword list in lexer.rs?
-                // Wait, I didn't add "program" to keywords in lexer.rs.
-                // Let's check lexer.rs.
+        if self.lexer.current_token == TokenType::Program {
+            self.next();
+            if let TokenType::Identifier(_) = self.lexer.current_token {
+                self.next();
+            } else {
+                self.error("Expected program name");
             }
-        }
-
-        // I need to update lexer to support "program" keyword if it's strictly required.
-        // Or I can just check if it's an identifier "program".
-        // Let's assume I'll fix lexer later or handle it here.
-
-        // Actually, let's just parse block for now as the main entry,
-        // but if the user follows the syllabus strictly, they will write "program id;".
-        // I should probably support it.
-
-        if let TokenType::Identifier(ref s) = self.lexer.current_token {
-            if s == "program" {
-                self.next(); // consume "program"
-                if let TokenType::Identifier(_) = self.lexer.current_token {
-                    self.next(); // consume id
-                } else {
-                    self.error("Expected program name");
-                }
-                self.expect(TokenType::Semicolon);
-            }
+            self.expect(TokenType::Semicolon);
+        } else {
+            self.error("Expected 'program'");
         }
 
         self.block();
-        self.expect(TokenType::Period);
     }
 
     // <block> → [<condecl>][<vardecl>][<proc>]<body>
@@ -171,10 +146,7 @@ impl<'a> Parser<'a> {
         loop {
             if let TokenType::Identifier(name) = self.lexer.current_token.clone() {
                 self.next();
-                if self.lexer.current_token == TokenType::Equals
-                    || self.lexer.current_token == TokenType::Assignment
-                {
-                    // Syllabus says := but standard Pascal uses =. Syllabus says <id>:=<integer>
+                if self.lexer.current_token == TokenType::Assignment {
                     self.next();
                 } else {
                     self.error("Expected :=");
@@ -526,61 +498,54 @@ impl<'a> Parser<'a> {
             }
             TokenType::Read => {
                 self.next();
-                if self.lexer.current_token == TokenType::LParen {
-                    self.next();
-                    loop {
-                        if let TokenType::Identifier(name) = self.lexer.current_token.clone() {
-                            self.next();
-                            let (level, addr) = if let Some((_, sym)) = self.position(&name) {
-                                match sym.kind {
-                                    SymbolType::Variable { level, addr } => (level, addr),
-                                    _ => {
-                                        self.error("Read to non-variable");
-                                        (0, 0)
-                                    }
+                self.expect(TokenType::LParen);
+                loop {
+                    if let TokenType::Identifier(name) = self.lexer.current_token.clone() {
+                        self.next();
+                        let (level, addr) = if let Some((_, sym)) = self.position(&name) {
+                            match sym.kind {
+                                SymbolType::Variable { level, addr } => (level, addr),
+                                _ => {
+                                    self.error("Read to non-variable");
+                                    (0, 0)
                                 }
-                            } else {
-                                self.error("Undefined variable");
-                                (0, 0)
-                            };
-                            self.emit(OpCode::RED, self.level - level, addr);
+                            }
                         } else {
-                            self.error("Expected identifier");
-                        }
-
-                        if self.lexer.current_token == TokenType::Comma {
-                            self.next();
-                        } else {
-                            break;
-                        }
+                            self.error("Undefined variable");
+                            (0, 0)
+                        };
+                        self.emit(OpCode::RED, self.level - level, addr);
+                    } else {
+                        self.error("Expected identifier");
                     }
-                    self.expect(TokenType::RParen);
+
+                    if self.lexer.current_token == TokenType::Comma {
+                        self.next();
+                    } else {
+                        break;
+                    }
                 }
+                self.expect(TokenType::RParen);
             }
             TokenType::Write => {
                 self.next();
-                if self.lexer.current_token == TokenType::LParen {
-                    self.next();
-                    loop {
-                        self.expression();
-                        self.emit(OpCode::WRT, 0, 0);
-                        if self.lexer.current_token == TokenType::Comma {
-                            self.next();
-                        } else {
-                            break;
-                        }
+                self.expect(TokenType::LParen);
+                loop {
+                    self.expression();
+                    self.emit(OpCode::WRT, 0, 0);
+                    if self.lexer.current_token == TokenType::Comma {
+                        self.next();
+                    } else {
+                        break;
                     }
-                    self.expect(TokenType::RParen);
                 }
+                self.expect(TokenType::RParen);
             }
             _ => {
-                // Empty statement or error?
-                // PL/0 allows empty statements?
-                // <body> → begin <statement>{;<statement>}end
-                // If <statement> can be empty, then ;; is valid.
-                // The BNF: <statement> → <id> := ... | ... | <body> | ...
-                // It doesn't explicitly show epsilon.
-                // But usually it's allowed.
+                self.error(&format!(
+                    "Unexpected token in statement: {:?}",
+                    self.lexer.current_token
+                ));
             }
         }
     }
