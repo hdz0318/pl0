@@ -10,11 +10,12 @@ pub enum VMState {
 }
 
 pub struct VM {
-    pub code: Vec<Instruction>,
-    pub stack: Vec<i64>,
-    pub pc: usize,
-    pub bp: usize,
-    pub sp: usize,
+    pub code: Vec<Instruction>, // CODE: Stores P-code
+    pub stack: Vec<i64>,        // STACK: Dynamic data space
+    pub p: usize,               // P: Program address register (PC)
+    pub b: usize,               // B: Base address register (BP)
+    pub t: usize,               // T: Top of stack register (SP)
+    pub i: Instruction,         // I: Instruction register
     pub output: Vec<String>,
     pub input_queue: Vec<i64>,
     pub state: VMState,
@@ -25,9 +26,10 @@ impl VM {
         Self {
             code,
             stack: vec![0; 1000], // Initial stack size
-            pc: 0,
-            bp: 0,
-            sp: 0,
+            p: 0,
+            b: 0,
+            t: 0,
+            i: Instruction::new(OpCode::LIT, 0, 0), // Initial dummy instruction
             output: Vec::new(),
             input_queue: Vec::new(),
             state: VMState::Running,
@@ -35,7 +37,7 @@ impl VM {
     }
 
     fn base(&self, mut l: usize) -> usize {
-        let mut b = self.bp;
+        let mut b = self.b;
         while l > 0 {
             b = self.stack[b] as usize;
             l -= 1;
@@ -48,67 +50,69 @@ impl VM {
             return;
         }
 
-        if self.pc >= self.code.len() {
+        if self.p >= self.code.len() {
             self.state = VMState::Error("PC out of bounds".to_string());
             return;
         }
 
-        let ir = self.code[self.pc];
-        self.pc += 1;
+        // Fetch instruction into I register
+        self.i = self.code[self.p];
+        self.p += 1;
+
+        let ir = self.i; // Use local alias for convenience matching original code structure
 
         match ir.f {
             OpCode::LIT => {
-                self.stack[self.sp] = ir.a;
-                self.sp += 1;
+                self.stack[self.t] = ir.a;
+                self.t += 1;
             }
             OpCode::OPR => {
                 match Operator::from_i64(ir.a) {
                     Some(Operator::RET) => {
                         // RET
-                        self.sp = self.bp;
-                        self.pc = self.stack[self.sp + 2] as usize;
-                        self.bp = self.stack[self.sp + 1] as usize;
-                        if self.pc == 0 {
+                        self.t = self.b;
+                        self.p = self.stack[self.t + 2] as usize;
+                        self.b = self.stack[self.t + 1] as usize;
+                        if self.p == 0 {
                             self.state = VMState::Halted;
                         }
                     }
                     Some(Operator::NEG) => {
                         // NEG
-                        self.stack[self.sp - 1] = -self.stack[self.sp - 1];
+                        self.stack[self.t - 1] = -self.stack[self.t - 1];
                     }
                     Some(Operator::ADD) => {
                         // ADD
-                        self.sp -= 1;
-                        self.stack[self.sp - 1] += self.stack[self.sp];
+                        self.t -= 1;
+                        self.stack[self.t - 1] += self.stack[self.t];
                     }
                     Some(Operator::SUB) => {
                         // SUB
-                        self.sp -= 1;
-                        self.stack[self.sp - 1] -= self.stack[self.sp];
+                        self.t -= 1;
+                        self.stack[self.t - 1] -= self.stack[self.t];
                     }
                     Some(Operator::MUL) => {
                         // MUL
-                        self.sp -= 1;
-                        self.stack[self.sp - 1] *= self.stack[self.sp];
+                        self.t -= 1;
+                        self.stack[self.t - 1] *= self.stack[self.t];
                     }
                     Some(Operator::DIV) => {
                         // DIV
-                        self.sp -= 1;
-                        if self.stack[self.sp] == 0 {
+                        self.t -= 1;
+                        if self.stack[self.t] == 0 {
                             self.state = VMState::Error("Division by zero".to_string());
                             return;
                         }
-                        self.stack[self.sp - 1] /= self.stack[self.sp];
+                        self.stack[self.t - 1] /= self.stack[self.t];
                     }
                     Some(Operator::ODD) => {
                         // ODD
-                        self.stack[self.sp - 1] %= 2;
+                        self.stack[self.t - 1] %= 2;
                     }
                     Some(Operator::EQL) => {
                         // EQL
-                        self.sp -= 1;
-                        self.stack[self.sp - 1] = if self.stack[self.sp - 1] == self.stack[self.sp]
-                        {
+                        self.t -= 1;
+                        self.stack[self.t - 1] = if self.stack[self.t - 1] == self.stack[self.t] {
                             1
                         } else {
                             0
@@ -116,9 +120,8 @@ impl VM {
                     }
                     Some(Operator::NEQ) => {
                         // NEQ
-                        self.sp -= 1;
-                        self.stack[self.sp - 1] = if self.stack[self.sp - 1] != self.stack[self.sp]
-                        {
+                        self.t -= 1;
+                        self.stack[self.t - 1] = if self.stack[self.t - 1] != self.stack[self.t] {
                             1
                         } else {
                             0
@@ -126,8 +129,8 @@ impl VM {
                     }
                     Some(Operator::LSS) => {
                         // LSS
-                        self.sp -= 1;
-                        self.stack[self.sp - 1] = if self.stack[self.sp - 1] < self.stack[self.sp] {
+                        self.t -= 1;
+                        self.stack[self.t - 1] = if self.stack[self.t - 1] < self.stack[self.t] {
                             1
                         } else {
                             0
@@ -135,9 +138,8 @@ impl VM {
                     }
                     Some(Operator::GEQ) => {
                         // GEQ
-                        self.sp -= 1;
-                        self.stack[self.sp - 1] = if self.stack[self.sp - 1] >= self.stack[self.sp]
-                        {
+                        self.t -= 1;
+                        self.stack[self.t - 1] = if self.stack[self.t - 1] >= self.stack[self.t] {
                             1
                         } else {
                             0
@@ -145,8 +147,8 @@ impl VM {
                     }
                     Some(Operator::GTR) => {
                         // GTR
-                        self.sp -= 1;
-                        self.stack[self.sp - 1] = if self.stack[self.sp - 1] > self.stack[self.sp] {
+                        self.t -= 1;
+                        self.stack[self.t - 1] = if self.stack[self.t - 1] > self.stack[self.t] {
                             1
                         } else {
                             0
@@ -154,9 +156,8 @@ impl VM {
                     }
                     Some(Operator::LEQ) => {
                         // LEQ
-                        self.sp -= 1;
-                        self.stack[self.sp - 1] = if self.stack[self.sp - 1] <= self.stack[self.sp]
-                        {
+                        self.t -= 1;
+                        self.stack[self.t - 1] = if self.stack[self.t - 1] <= self.stack[self.t] {
                             1
                         } else {
                             0
@@ -164,8 +165,8 @@ impl VM {
                     }
                     Some(Operator::WRT) => {
                         // Write stack top
-                        self.sp -= 1;
-                        let val = self.stack[self.sp];
+                        self.t -= 1;
+                        let val = self.stack[self.t];
                         self.output.push(val.to_string());
                     }
                     Some(Operator::WRL) => {
@@ -175,10 +176,10 @@ impl VM {
                     Some(Operator::RED) => {
                         // Read to stack top
                         if let Some(val) = self.input_queue.pop() {
-                            self.stack[self.sp] = val;
-                            self.sp += 1;
+                            self.stack[self.t] = val;
+                            self.t += 1;
                         } else {
-                            self.pc -= 1;
+                            self.p -= 1;
                             self.state = VMState::WaitingForInput;
                         }
                     }
@@ -190,33 +191,33 @@ impl VM {
             OpCode::LOD => {
                 let base = self.base(ir.l);
                 let addr = (base as i64 + ir.a) as usize;
-                self.stack[self.sp] = self.stack[addr];
-                self.sp += 1;
+                self.stack[self.t] = self.stack[addr];
+                self.t += 1;
             }
             OpCode::STO => {
                 let base = self.base(ir.l);
                 let addr = (base as i64 + ir.a) as usize;
-                self.sp -= 1;
-                self.stack[addr] = self.stack[self.sp];
+                self.t -= 1;
+                self.stack[addr] = self.stack[self.t];
             }
             OpCode::CAL => {
                 let base = self.base(ir.l);
-                self.stack[self.sp] = base as i64; // Static Link
-                self.stack[self.sp + 1] = self.bp as i64; // Dynamic Link
-                self.stack[self.sp + 2] = self.pc as i64; // Return Address
-                self.bp = self.sp;
-                self.pc = ir.a as usize;
+                self.stack[self.t] = base as i64; // Static Link (SL)
+                self.stack[self.t + 1] = self.b as i64; // Dynamic Link (DL)
+                self.stack[self.t + 2] = self.p as i64; // Return Address (RA)
+                self.b = self.t;
+                self.p = ir.a as usize;
             }
             OpCode::INT => {
-                self.sp = (self.sp as i64 + ir.a) as usize;
+                self.t = (self.t as i64 + ir.a) as usize;
             }
             OpCode::JMP => {
-                self.pc = ir.a as usize;
+                self.p = ir.a as usize;
             }
             OpCode::JPC => {
-                self.sp -= 1;
-                if self.stack[self.sp] == 0 {
-                    self.pc = ir.a as usize;
+                self.t -= 1;
+                if self.stack[self.t] == 0 {
+                    self.p = ir.a as usize;
                 }
             }
             OpCode::RED => {
@@ -226,13 +227,13 @@ impl VM {
                     self.stack[addr] = val;
                 } else {
                     // Push back PC to retry this instruction when input is available
-                    self.pc -= 1;
+                    self.p -= 1;
                     self.state = VMState::WaitingForInput;
                 }
             }
             OpCode::WRT => {
-                self.sp -= 1; // Pop
-                let val = self.stack[self.sp];
+                self.t -= 1; // Pop
+                let val = self.stack[self.t];
                 self.output.push(val.to_string());
             }
         }
@@ -240,9 +241,9 @@ impl VM {
 
     pub fn interpret(&mut self) {
         println!("Start PL/0");
-        self.pc = 0;
-        self.bp = 0;
-        self.sp = 0;
+        self.p = 0;
+        self.b = 0;
+        self.t = 0;
         self.state = VMState::Running;
         let mut output_index = 0;
 
@@ -300,6 +301,6 @@ mod tests {
         vm.step(); // LIT 20
         vm.step(); // ADD
 
-        assert_eq!(vm.stack[vm.sp - 1], 30);
+        assert_eq!(vm.stack[vm.t - 1], 30);
     }
 }

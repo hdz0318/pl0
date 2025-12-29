@@ -31,44 +31,45 @@ pub fn run_tui(mut vm: VM) -> io::Result<()> {
 
         if event::poll(std::time::Duration::from_millis(50))?
             && let Event::Key(key) = event::read()?
-                && key.kind == KeyEventKind::Press {
-                    if vm.state == VMState::WaitingForInput {
-                        match key.code {
-                            KeyCode::Enter => {
-                                if let Ok(val) = input_buffer.trim().parse::<i64>() {
-                                    vm.input_queue.push(val);
-                                    vm.state = VMState::Running;
-                                    input_buffer.clear();
-                                }
-                            }
-                            KeyCode::Char(c) => {
-                                if c.is_ascii_digit() || c == '-' {
-                                    input_buffer.push(c);
-                                }
-                            }
-                            KeyCode::Backspace => {
-                                input_buffer.pop();
-                            }
-                            KeyCode::Esc => {
-                                break;
-                            }
-                            _ => {}
-                        }
-                    } else {
-                        match key.code {
-                            KeyCode::Char('q') => break,
-                            KeyCode::Char('n') | KeyCode::Char(' ') => {
-                                if vm.state == VMState::Running {
-                                    vm.step();
-                                }
-                            }
-                            KeyCode::Char('r') => {
-                                auto_run = !auto_run;
-                            }
-                            _ => {}
+            && key.kind == KeyEventKind::Press
+        {
+            if vm.state == VMState::WaitingForInput {
+                match key.code {
+                    KeyCode::Enter => {
+                        if let Ok(val) = input_buffer.trim().parse::<i64>() {
+                            vm.input_queue.push(val);
+                            vm.state = VMState::Running;
+                            input_buffer.clear();
                         }
                     }
+                    KeyCode::Char(c) => {
+                        if c.is_ascii_digit() || c == '-' {
+                            input_buffer.push(c);
+                        }
+                    }
+                    KeyCode::Backspace => {
+                        input_buffer.pop();
+                    }
+                    KeyCode::Esc => {
+                        break;
+                    }
+                    _ => {}
                 }
+            } else {
+                match key.code {
+                    KeyCode::Char('q') => break,
+                    KeyCode::Char('n') | KeyCode::Char(' ') => {
+                        if vm.state == VMState::Running {
+                            vm.step();
+                        }
+                    }
+                    KeyCode::Char('r') => {
+                        auto_run = !auto_run;
+                    }
+                    _ => {}
+                }
+            }
+        }
 
         if vm.state == VMState::Halted && auto_run {
             auto_run = false;
@@ -101,7 +102,7 @@ fn ui(f: &mut Frame, vm: &VM, input_buffer: &str) {
         .enumerate()
         .map(|(i, instr)| {
             let content = format!("{:3}: {:?} {}, {}", i, instr.f, instr.l, instr.a);
-            let style = if i == vm.pc {
+            let style = if i == vm.p {
                 Style::default().fg(Color::Black).bg(Color::White)
             } else {
                 Style::default()
@@ -111,7 +112,7 @@ fn ui(f: &mut Frame, vm: &VM, input_buffer: &str) {
         .collect();
 
     let mut code_state = ratatui::widgets::ListState::default();
-    code_state.select(Some(vm.pc));
+    code_state.select(Some(vm.p));
 
     let code_list = List::new(instructions)
         .block(Block::default().borders(Borders::ALL).title("Code"))
@@ -121,21 +122,21 @@ fn ui(f: &mut Frame, vm: &VM, input_buffer: &str) {
 
     // Stack View
     let mut stack_items = Vec::new();
-    for i in 0..vm.sp {
+    for i in 0..vm.t {
         let val = vm.stack[i];
         let mut content = format!("{:3}: {}", i, val);
 
-        if i == vm.bp {
-            content.push_str(" <--- BP");
+        if i == vm.b {
+            content.push_str(" <--- B");
         }
 
-        if i == vm.bp {
+        if i == vm.b {
             content.push_str(" [SL]");
         }
-        if i == vm.bp + 1 {
+        if i == vm.b + 1 {
             content.push_str(" [DL]");
         }
-        if i == vm.bp + 2 {
+        if i == vm.b + 2 {
             content.push_str(" [RA]");
         }
 
@@ -161,8 +162,8 @@ fn ui(f: &mut Frame, vm: &VM, input_buffer: &str) {
 
     // Status
     let status_text = format!(
-        "State: {:?}\nPC: {}\nBP: {}\nSP: {}\n\nControls:\n'n'/'Space': Step\n'r': Run/Pause\n'q': Quit\n\nInput: {}",
-        vm.state, vm.pc, vm.bp, vm.sp, input_buffer
+        "State: {:?}\nP: {}\nB: {}\nT: {}\nI: {:?} {}, {}\n\nControls:\n'n'/'Space': Step\n'r': Run/Pause\n'q': Quit\n\nInput: {}",
+        vm.state, vm.p, vm.b, vm.t, vm.i.f, vm.i.l, vm.i.a, input_buffer
     );
     let status_widget =
         Paragraph::new(status_text).block(Block::default().borders(Borders::ALL).title("Status"));
