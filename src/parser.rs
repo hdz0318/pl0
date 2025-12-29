@@ -1,9 +1,39 @@
 use crate::lexer::Lexer;
-use crate::types::{Instruction, OpCode, Symbol, SymbolType, TokenType};
+use crate::types::{Instruction, OpCode, Operator, Symbol, SymbolType, TokenType};
+
+pub struct CodeGenerator {
+    pub code: Vec<Instruction>,
+}
+
+impl Default for CodeGenerator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl CodeGenerator {
+    pub fn new() -> Self {
+        Self { code: Vec::new() }
+    }
+
+    pub fn emit(&mut self, f: OpCode, l: usize, a: i64) {
+        self.code.push(Instruction::new(f, l, a));
+    }
+
+    pub fn next_address(&self) -> usize {
+        self.code.len()
+    }
+
+    pub fn backpatch(&mut self, addr: usize, val: i64) {
+        if addr < self.code.len() {
+            self.code[addr].a = val;
+        }
+    }
+}
 
 pub struct Parser<'a> {
     lexer: Lexer<'a>,
-    pub code: Vec<Instruction>,
+    pub generator: CodeGenerator,
     table: Vec<Symbol>,
     level: usize, // Current nesting level
 }
@@ -12,7 +42,7 @@ impl<'a> Parser<'a> {
     pub fn new(lexer: Lexer<'a>) -> Self {
         Self {
             lexer,
-            code: Vec::new(),
+            generator: CodeGenerator::new(),
             table: Vec::new(),
             level: 0,
         }
@@ -38,7 +68,7 @@ impl<'a> Parser<'a> {
     }
 
     fn emit(&mut self, f: OpCode, l: usize, a: i64) {
-        self.code.push(Instruction::new(f, l, a));
+        self.generator.emit(f, l, a);
     }
 
     fn enter(&mut self, name: String, kind: SymbolType) {
@@ -79,7 +109,7 @@ impl<'a> Parser<'a> {
     // <block> → [<condecl>][<vardecl>][<proc>]<body>
     fn block(&mut self) {
         let tx0 = self.table.len(); // Save symbol table index
-        let jmp_addr = self.code.len();
+        let jmp_addr = self.generator.next_address();
         self.emit(OpCode::JMP, 0, 0); // Jump to start of body (placeholder)
 
         // We need to allocate space for SL, DL, RA (3 units)
@@ -126,14 +156,15 @@ impl<'a> Parser<'a> {
         }
 
         // Fix the JMP to point to the start of the body
-        self.code[jmp_addr].a = self.code.len() as i64;
+        self.generator
+            .backpatch(jmp_addr, self.generator.next_address() as i64);
 
         // Allocate space
         self.emit(OpCode::INT, 0, data_alloc_size as i64);
 
         self.statement();
 
-        self.emit(OpCode::OPR, 0, 0); // Return
+        self.emit(OpCode::OPR, 0, Operator::RET as i64); // Return
 
         // Restore symbol table
         self.table.truncate(tx0);
@@ -216,7 +247,7 @@ impl<'a> Parser<'a> {
                 name,
                 SymbolType::Procedure {
                     level: self.level,
-                    addr: self.code.len() as i64,
+                    addr: self.generator.next_address() as i64,
                 },
             );
 
@@ -471,30 +502,34 @@ impl<'a> Parser<'a> {
                 self.next();
                 self.condition();
                 self.expect(TokenType::Then);
-                let jpc_idx = self.code.len();
+                let jpc_idx = self.generator.next_address();
                 self.emit(OpCode::JPC, 0, 0);
                 self.statement();
                 if self.lexer.current_token == TokenType::Else {
                     self.next();
-                    let jmp_idx = self.code.len();
+                    let jmp_idx = self.generator.next_address();
                     self.emit(OpCode::JMP, 0, 0);
-                    self.code[jpc_idx].a = self.code.len() as i64;
+                    self.generator
+                        .backpatch(jpc_idx, self.generator.next_address() as i64);
                     self.statement();
-                    self.code[jmp_idx].a = self.code.len() as i64;
+                    self.generator
+                        .backpatch(jmp_idx, self.generator.next_address() as i64);
                 } else {
-                    self.code[jpc_idx].a = self.code.len() as i64;
+                    self.generator
+                        .backpatch(jpc_idx, self.generator.next_address() as i64);
                 }
             }
             TokenType::While => {
                 self.next();
-                let start_idx = self.code.len();
+                let start_idx = self.generator.next_address();
                 self.condition();
                 self.expect(TokenType::Do);
-                let jpc_idx = self.code.len();
+                let jpc_idx = self.generator.next_address();
                 self.emit(OpCode::JPC, 0, 0);
                 self.statement();
                 self.emit(OpCode::JMP, 0, start_idx as i64);
-                self.code[jpc_idx].a = self.code.len() as i64;
+                self.generator
+                    .backpatch(jpc_idx, self.generator.next_address() as i64);
             }
             TokenType::Read => {
                 self.next();
@@ -555,7 +590,7 @@ impl<'a> Parser<'a> {
         if self.lexer.current_token == TokenType::Odd {
             self.next();
             self.expression();
-            self.emit(OpCode::OPR, 0, 6);
+            self.emit(OpCode::OPR, 0, Operator::ODD as i64);
         } else {
             self.expression();
             let op = self.lexer.current_token.clone();
@@ -569,12 +604,12 @@ impl<'a> Parser<'a> {
                     self.next();
                     self.expression();
                     match op {
-                        TokenType::Equals => self.emit(OpCode::OPR, 0, 8),
-                        TokenType::Hash => self.emit(OpCode::OPR, 0, 9),
-                        TokenType::LessThan => self.emit(OpCode::OPR, 0, 10),
-                        TokenType::GreaterEqual => self.emit(OpCode::OPR, 0, 11),
-                        TokenType::GreaterThan => self.emit(OpCode::OPR, 0, 12),
-                        TokenType::LessEqual => self.emit(OpCode::OPR, 0, 13),
+                        TokenType::Equals => self.emit(OpCode::OPR, 0, Operator::EQL as i64),
+                        TokenType::Hash => self.emit(OpCode::OPR, 0, Operator::NEQ as i64),
+                        TokenType::LessThan => self.emit(OpCode::OPR, 0, Operator::LSS as i64),
+                        TokenType::GreaterEqual => self.emit(OpCode::OPR, 0, Operator::GEQ as i64),
+                        TokenType::GreaterThan => self.emit(OpCode::OPR, 0, Operator::GTR as i64),
+                        TokenType::LessEqual => self.emit(OpCode::OPR, 0, Operator::LEQ as i64),
                         _ => {}
                     }
                 }
@@ -596,7 +631,7 @@ impl<'a> Parser<'a> {
         self.term();
 
         if op == TokenType::Minus {
-            self.emit(OpCode::OPR, 0, 1); // Negate
+            self.emit(OpCode::OPR, 0, Operator::NEG as i64); // Negate
         }
 
         while self.lexer.current_token == TokenType::Plus
@@ -606,9 +641,9 @@ impl<'a> Parser<'a> {
             self.next();
             self.term();
             if op == TokenType::Plus {
-                self.emit(OpCode::OPR, 0, 2);
+                self.emit(OpCode::OPR, 0, Operator::ADD as i64);
             } else {
-                self.emit(OpCode::OPR, 0, 3);
+                self.emit(OpCode::OPR, 0, Operator::SUB as i64);
             }
         }
     }
@@ -623,9 +658,9 @@ impl<'a> Parser<'a> {
             self.next();
             self.factor();
             if op == TokenType::Multiply {
-                self.emit(OpCode::OPR, 0, 4);
+                self.emit(OpCode::OPR, 0, Operator::MUL as i64);
             } else {
-                self.emit(OpCode::OPR, 0, 5);
+                self.emit(OpCode::OPR, 0, Operator::DIV as i64);
             }
         }
     }

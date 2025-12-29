@@ -29,9 +29,9 @@ pub fn run_tui(mut vm: VM) -> io::Result<()> {
             std::thread::sleep(std::time::Duration::from_millis(50));
         }
 
-        if event::poll(std::time::Duration::from_millis(50))? {
-            if let Event::Key(key) = event::read()? {
-                if key.kind == KeyEventKind::Press {
+        if event::poll(std::time::Duration::from_millis(50))?
+            && let Event::Key(key) = event::read()?
+                && key.kind == KeyEventKind::Press {
                     if vm.state == VMState::WaitingForInput {
                         match key.code {
                             KeyCode::Enter => {
@@ -42,7 +42,7 @@ pub fn run_tui(mut vm: VM) -> io::Result<()> {
                                 }
                             }
                             KeyCode::Char(c) => {
-                                if c.is_digit(10) || c == '-' {
+                                if c.is_ascii_digit() || c == '-' {
                                     input_buffer.push(c);
                                 }
                             }
@@ -69,8 +69,6 @@ pub fn run_tui(mut vm: VM) -> io::Result<()> {
                         }
                     }
                 }
-            }
-        }
 
         if vm.state == VMState::Halted && auto_run {
             auto_run = false;

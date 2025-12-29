@@ -1,4 +1,4 @@
-use crate::types::{Instruction, OpCode};
+use crate::types::{Instruction, OpCode, Operator};
 use std::io::{self, Write};
 
 #[derive(PartialEq, Debug, Clone)]
@@ -62,8 +62,8 @@ impl VM {
                 self.sp += 1;
             }
             OpCode::OPR => {
-                match ir.a {
-                    0 => {
+                match Operator::from_i64(ir.a) {
+                    Some(Operator::RET) => {
                         // RET
                         self.sp = self.bp;
                         self.pc = self.stack[self.sp + 2] as usize;
@@ -72,26 +72,26 @@ impl VM {
                             self.state = VMState::Halted;
                         }
                     }
-                    1 => {
+                    Some(Operator::NEG) => {
                         // NEG
                         self.stack[self.sp - 1] = -self.stack[self.sp - 1];
                     }
-                    2 => {
+                    Some(Operator::ADD) => {
                         // ADD
                         self.sp -= 1;
                         self.stack[self.sp - 1] += self.stack[self.sp];
                     }
-                    3 => {
+                    Some(Operator::SUB) => {
                         // SUB
                         self.sp -= 1;
                         self.stack[self.sp - 1] -= self.stack[self.sp];
                     }
-                    4 => {
+                    Some(Operator::MUL) => {
                         // MUL
                         self.sp -= 1;
                         self.stack[self.sp - 1] *= self.stack[self.sp];
                     }
-                    5 => {
+                    Some(Operator::DIV) => {
                         // DIV
                         self.sp -= 1;
                         if self.stack[self.sp] == 0 {
@@ -100,11 +100,11 @@ impl VM {
                         }
                         self.stack[self.sp - 1] /= self.stack[self.sp];
                     }
-                    6 => {
+                    Some(Operator::ODD) => {
                         // ODD
                         self.stack[self.sp - 1] %= 2;
                     }
-                    8 => {
+                    Some(Operator::EQL) => {
                         // EQL
                         self.sp -= 1;
                         self.stack[self.sp - 1] = if self.stack[self.sp - 1] == self.stack[self.sp]
@@ -114,7 +114,7 @@ impl VM {
                             0
                         };
                     }
-                    9 => {
+                    Some(Operator::NEQ) => {
                         // NEQ
                         self.sp -= 1;
                         self.stack[self.sp - 1] = if self.stack[self.sp - 1] != self.stack[self.sp]
@@ -124,7 +124,7 @@ impl VM {
                             0
                         };
                     }
-                    10 => {
+                    Some(Operator::LSS) => {
                         // LSS
                         self.sp -= 1;
                         self.stack[self.sp - 1] = if self.stack[self.sp - 1] < self.stack[self.sp] {
@@ -133,7 +133,7 @@ impl VM {
                             0
                         };
                     }
-                    11 => {
+                    Some(Operator::GEQ) => {
                         // GEQ
                         self.sp -= 1;
                         self.stack[self.sp - 1] = if self.stack[self.sp - 1] >= self.stack[self.sp]
@@ -143,7 +143,7 @@ impl VM {
                             0
                         };
                     }
-                    12 => {
+                    Some(Operator::GTR) => {
                         // GTR
                         self.sp -= 1;
                         self.stack[self.sp - 1] = if self.stack[self.sp - 1] > self.stack[self.sp] {
@@ -152,7 +152,7 @@ impl VM {
                             0
                         };
                     }
-                    13 => {
+                    Some(Operator::LEQ) => {
                         // LEQ
                         self.sp -= 1;
                         self.stack[self.sp - 1] = if self.stack[self.sp - 1] <= self.stack[self.sp]
@@ -162,7 +162,27 @@ impl VM {
                             0
                         };
                     }
-                    _ => {
+                    Some(Operator::WRT) => {
+                        // Write stack top
+                        self.sp -= 1;
+                        let val = self.stack[self.sp];
+                        self.output.push(val.to_string());
+                    }
+                    Some(Operator::WRL) => {
+                        // Write newline
+                        self.output.push("\n".to_string());
+                    }
+                    Some(Operator::RED) => {
+                        // Read to stack top
+                        if let Some(val) = self.input_queue.pop() {
+                            self.stack[self.sp] = val;
+                            self.sp += 1;
+                        } else {
+                            self.pc -= 1;
+                            self.state = VMState::WaitingForInput;
+                        }
+                    }
+                    None => {
                         self.state = VMState::Error(format!("Unknown OPR {}", ir.a));
                     }
                 }
@@ -224,10 +244,17 @@ impl VM {
         self.bp = 0;
         self.sp = 0;
         self.state = VMState::Running;
+        let mut output_index = 0;
 
         loop {
             match self.state {
-                VMState::Running => self.step(),
+                VMState::Running => {
+                    self.step();
+                    while output_index < self.output.len() {
+                        println!("{}", self.output[output_index]);
+                        output_index += 1;
+                    }
+                }
                 VMState::Halted => {
                     println!("Program finished");
                     break;
@@ -249,10 +276,6 @@ impl VM {
                     }
                 }
             }
-        }
-
-        for line in &self.output {
-            println!("{}", line);
         }
     }
 }

@@ -157,7 +157,7 @@ impl<'a> Lexer<'a> {
     fn scan_number(&mut self) {
         let mut num_str = String::new();
         while let Some(&c) = self.input.peek() {
-            if c.is_digit(10) {
+            if c.is_ascii_digit() {
                 num_str.push(c);
                 self.input.next();
             } else {
