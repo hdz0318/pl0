@@ -30,12 +30,33 @@ impl<'a> Parser<'a> {
     }
 
     fn error(&mut self, msg: &str) -> ParseResult<()> {
+        self.report_error(msg);
+        Err(ParseFailure)
+    }
+
+    fn report_error(&mut self, msg: &str) {
         self.errors.push(ParseError {
             line: self.lexer.token_line,
             col: self.lexer.token_col,
             message: msg.to_string(),
         });
-        Err(ParseFailure)
+    }
+
+    fn recover_decl(&mut self) {
+        while self.lexer.current_token != TokenType::Eof {
+            match self.lexer.current_token {
+                TokenType::Comma | TokenType::Semicolon => return,
+                TokenType::Var
+                | TokenType::Procedure
+                | TokenType::Begin
+                | TokenType::Call
+                | TokenType::If
+                | TokenType::While
+                | TokenType::Read
+                | TokenType::Write => return,
+                _ => self.next(),
+            }
+        }
     }
 
     fn next(&mut self) {
@@ -110,36 +131,67 @@ impl<'a> Parser<'a> {
         let mut consts = Vec::new();
         self.next(); // consume 'const'
         loop {
+            let mut valid_decl = false;
             if let TokenType::Identifier(name) = self.lexer.current_token.clone() {
                 self.next();
                 if self.lexer.current_token == TokenType::Assignment
                     || self.lexer.current_token == TokenType::Equals
                 {
                     self.next();
+                    if let TokenType::Number(val) = self.lexer.current_token {
+                        consts.push(ConstDecl { name, value: val });
+                        self.next();
+                        valid_decl = true;
+                    } else {
+                        self.report_error("Expected number");
+                    }
                 } else {
-                    self.error("Expected :=")?;
-                    return Err(ParseFailure);
-                }
-
-                if let TokenType::Number(val) = self.lexer.current_token {
-                    consts.push(ConstDecl { name, value: val });
-                    self.next();
-                } else {
-                    self.error("Expected number")?;
-                    return Err(ParseFailure);
+                    self.report_error("Expected :=");
                 }
             } else {
-                self.error("Expected identifier")?;
-                return Err(ParseFailure);
+                self.report_error("Expected identifier");
+            }
+
+            if !valid_decl {
+                self.recover_decl();
             }
 
             if self.lexer.current_token == TokenType::Comma {
                 self.next();
-            } else {
+                continue;
+            }
+
+            if self.lexer.current_token == TokenType::Semicolon {
+                self.next();
                 break;
             }
+
+            // If we are here, we are missing a separator or terminator
+            if matches!(
+                self.lexer.current_token,
+                TokenType::Var | TokenType::Procedure | TokenType::Begin
+            ) {
+                self.report_error("Expected ';'");
+                break;
+            }
+
+            // If we are not at a keyword, and not at comma/semi, and we had a valid decl, it's an error
+            if valid_decl {
+                self.report_error("Expected ',' or ';'");
+                self.recover_decl();
+                if self.lexer.current_token == TokenType::Comma {
+                    self.next();
+                    continue;
+                }
+                if self.lexer.current_token == TokenType::Semicolon {
+                    self.next();
+                    break;
+                }
+            }
+
+            // If we are here, we probably can't continue this declaration block
+            break;
         }
-        self.expect(TokenType::Semicolon)?;
         Ok(consts)
     }
 
@@ -147,21 +199,51 @@ impl<'a> Parser<'a> {
         let mut vars = Vec::new();
         self.next(); // consume 'var'
         loop {
+            let mut valid_decl = false;
             if let TokenType::Identifier(name) = self.lexer.current_token.clone() {
                 vars.push(name);
                 self.next();
+                valid_decl = true;
             } else {
-                self.error("Expected identifier")?;
-                return Err(ParseFailure);
+                self.report_error("Expected identifier");
+            }
+
+            if !valid_decl {
+                self.recover_decl();
             }
 
             if self.lexer.current_token == TokenType::Comma {
                 self.next();
-            } else {
+                continue;
+            }
+
+            if self.lexer.current_token == TokenType::Semicolon {
+                self.next();
                 break;
             }
+
+            if matches!(
+                self.lexer.current_token,
+                TokenType::Var | TokenType::Procedure | TokenType::Begin
+            ) {
+                self.report_error("Expected ';'");
+                break;
+            }
+
+            if valid_decl {
+                self.report_error("Expected ',' or ';'");
+                self.recover_decl();
+                if self.lexer.current_token == TokenType::Comma {
+                    self.next();
+                    continue;
+                }
+                if self.lexer.current_token == TokenType::Semicolon {
+                    self.next();
+                    break;
+                }
+            }
+            break;
         }
-        self.expect(TokenType::Semicolon)?;
         Ok(vars)
     }
 

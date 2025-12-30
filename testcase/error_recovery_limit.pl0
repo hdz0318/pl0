@@ -1,0 +1,6 @@
+program TestRecoveryLimit;
+const a = 10, ;
+var x;
+begin
+    x := 10 + ;
+end.
