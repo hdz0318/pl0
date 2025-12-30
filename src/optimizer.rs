@@ -55,25 +55,6 @@ fn optimize_pass(code: &[Instruction]) -> (Vec<Instruction>, bool) {
                     if prev_instr.f == OpCode::LIT {
                         let val = prev_instr.a;
 
-                        // Check if we can optimize LIT val, OPR op
-                        // Conditions: instr (OPR) and prev_instr (LIT) must not be jump targets
-                        // Actually, prev_instr CAN be a jump target if we just remove the OPR (e.g. + 0)
-                        // Wait, if we have `LIT 0, ADD`. `LIT 0` pushes 0. `ADD` pops 2, adds, pushes.
-                        // Result is same as before `LIT 0`.
-                        // So `LIT 0, ADD` is identity on the stack (except for the other operand).
-                        // If we remove `LIT 0` and `ADD`, the stack is unchanged.
-                        // If `LIT 0` is a jump target, and we jump there, we expect to push 0 then add.
-                        // If we remove them, we land on whatever is after.
-                        // If we jump to `LIT 0`, we expect `stack + 0`.
-                        // If we remove them, we have `stack`.
-                        // So it IS safe even if `LIT 0` is a jump target?
-                        // YES, because the net effect of the block `LIT 0, ADD` is null.
-                        // BUT, if we jump to `ADD` (index `i`), we expect `0` to be on stack (pushed by `LIT 0`).
-                        // If we remove `LIT 0`, and jump to `ADD` (which is now gone), we land on next instr.
-                        // But the stack is missing the `0`.
-                        // So `i` (ADD) CANNOT be a jump target.
-                        // `prev_idx` (LIT 0) CAN be a jump target.
-
                         let is_target_op = targets.contains(&i);
 
                         if !is_target_op {

@@ -19,4 +19,4 @@ begin
     write(z);
     i := i + 1;
   end;
-end.
+end
