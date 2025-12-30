@@ -44,6 +44,7 @@ fn optimize_statement(stmt: &mut Statement) {
             condition,
             then_stmt,
             else_stmt,
+            ..
         } => {
             optimize_condition(condition);
             optimize_statement(then_stmt);
@@ -62,7 +63,7 @@ fn optimize_statement(stmt: &mut Statement) {
                 }
             }
         }
-        Statement::While { condition, body } => {
+        Statement::While { condition, body, .. } => {
             optimize_condition(condition);
             optimize_statement(body);
 
@@ -80,7 +81,7 @@ fn optimize_statement(stmt: &mut Statement) {
             }
         }
         Statement::Read { .. } => {}
-        Statement::Write { exprs } => {
+        Statement::Write { exprs, .. } => {
             for expr in exprs {
                 optimize_expr(expr);
             }
@@ -131,7 +132,7 @@ fn optimize_block_dag(statements: &mut [Statement]) {
 
     for stmt in statements.iter_mut() {
         match stmt {
-            Statement::Assignment { name, expr } => {
+            Statement::Assignment { name, expr, .. } => {
                 // 1. CSE
                 let mut replaced = false;
                 if let Some(var_name) = available_exprs.get(expr) {
@@ -148,7 +149,7 @@ fn optimize_block_dag(statements: &mut [Statement]) {
                         available_exprs.insert(expr.clone(), name.clone());
                     }
             }
-            Statement::Read { names } => {
+            Statement::Read { names, .. } => {
                 for name in names {
                     available_exprs.retain(|k, _| !expr_uses_var(k, name));
                 }
@@ -174,7 +175,7 @@ fn expr_uses_var(expr: &Expr, var: &str) -> bool {
 }
 
 fn try_licm(stmt: &mut Statement) {
-    if let Statement::While { condition: _, body } = stmt {
+    if let Statement::While { condition: _, body, .. } = stmt {
         // 1. Collect modified vars in loop
         let mut modified = HashSet::new();
         collect_modified_vars(body, &mut modified);
@@ -186,7 +187,7 @@ fn try_licm(stmt: &mut Statement) {
                 let mut i = 0;
                 while i < statements.len() {
                     let mut hoist = false;
-                    if let Statement::Assignment { name: _, expr } = &statements[i]
+                    if let Statement::Assignment { name: _, expr, .. } = &statements[i]
                         && !expr_depends_on(expr, &modified) {
                             hoist = true;
                         }
@@ -198,7 +199,7 @@ fn try_licm(stmt: &mut Statement) {
                     }
                 }
             }
-            Statement::Assignment { name: _, expr } => {
+            Statement::Assignment { name: _, expr, .. } => {
                 if !expr_depends_on(expr, &modified) {
                     invariant_stmts.push(std::mem::replace(body.as_mut(), Statement::Empty));
                 }
@@ -222,7 +223,7 @@ fn collect_modified_vars(stmt: &Statement, modified: &mut HashSet<String>) {
         Statement::Assignment { name, .. } => {
             modified.insert(name.clone());
         }
-        Statement::Read { names } => {
+        Statement::Read { names, .. } => {
             for n in names {
                 modified.insert(n.clone());
             }

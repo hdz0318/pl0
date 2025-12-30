@@ -236,13 +236,14 @@ impl<'a> Parser<'a> {
     }
 
     fn statement(&mut self) -> ParseResult<Statement> {
+        let line = self.lexer.token_line;
         match self.lexer.current_token.clone() {
             TokenType::Identifier(name) => {
                 self.next();
                 if self.lexer.current_token == TokenType::Assignment {
                     self.next();
                     let expr = self.expression()?;
-                    Ok(Statement::Assignment { name, expr })
+                    Ok(Statement::Assignment { name, expr, line })
                 } else {
                     self.error("Expected :=")?;
                     Err(ParseFailure)
@@ -265,7 +266,7 @@ impl<'a> Parser<'a> {
                         }
                         self.expect(TokenType::RParen)?;
                     }
-                    Ok(Statement::Call { name, args })
+                    Ok(Statement::Call { name, args, line })
                 } else {
                     self.error("Expected identifier")?;
                     Err(ParseFailure)
@@ -349,6 +350,7 @@ impl<'a> Parser<'a> {
                     condition,
                     then_stmt,
                     else_stmt,
+                    line,
                 })
             }
             TokenType::While => {
@@ -356,7 +358,7 @@ impl<'a> Parser<'a> {
                 let condition = self.condition()?;
                 self.expect(TokenType::Do)?;
                 let body = Box::new(self.statement()?);
-                Ok(Statement::While { condition, body })
+                Ok(Statement::While { condition, body, line })
             }
             TokenType::Read => {
                 self.next();
@@ -385,7 +387,7 @@ impl<'a> Parser<'a> {
                     self.error("Expected identifier or '('")?;
                     return Err(ParseFailure);
                 }
-                Ok(Statement::Read { names })
+                Ok(Statement::Read { names, line })
             }
             TokenType::Write => {
                 self.next();
@@ -404,7 +406,7 @@ impl<'a> Parser<'a> {
                 } else {
                     exprs.push(self.expression()?);
                 }
-                Ok(Statement::Write { exprs })
+                Ok(Statement::Write { exprs, line })
             }
             _ => Ok(Statement::Empty),
         }

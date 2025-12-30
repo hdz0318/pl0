@@ -3,7 +3,7 @@ var a, b;
 begin
     a := 10;
     a := a + ;
-	call ;
+	call b;
     if a > 10 then
         b := 20
     else

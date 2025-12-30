@@ -116,41 +116,48 @@ impl<'a> SemanticAnalyzer<'a> {
 
     fn analyze_statement(&mut self, stmt: &Statement) -> Result<(), Vec<String>> {
         match stmt {
-            Statement::Assignment { name, expr } => {
+            Statement::Assignment { name, expr, line } => {
                 match self.symbol_table.resolve(name) {
                     Some(sym) => match sym.kind {
                         SymbolType::Constant { .. } => {
-                            self.errors
-                                .push(format!("Cannot assign to constant '{}'", name));
+                            self.errors.push(format!(
+                                "Line {}: Cannot assign to constant '{}'",
+                                line, name
+                            ));
                         }
                         SymbolType::Procedure { .. } => {
-                            self.errors
-                                .push(format!("Cannot assign to procedure '{}'", name));
+                            self.errors.push(format!(
+                                "Line {}: Cannot assign to procedure '{}'",
+                                line, name
+                            ));
                         }
                         SymbolType::Variable { .. } => {}
                     },
                     None => {
-                        self.errors.push(format!("Undefined variable '{}'", name));
+                        self.errors
+                            .push(format!("Line {}: Undefined variable '{}'", line, name));
                     }
                 }
                 self.analyze_expr(expr)?;
             }
-            Statement::Call { name, args } => {
+            Statement::Call { name, args, line } => {
                 match self.symbol_table.resolve(name) {
                     Some(sym) => {
                         match sym.kind {
                             SymbolType::Procedure { .. } => {
                                 // Check arg count if we had that info in SymbolType
-                                // Current SymbolType::Procedure doesn't store param count.
-                                // We should probably add it to SymbolType for better checking.
                             }
                             _ => {
-                                self.errors.push(format!("'{}' is not a procedure", name));
+                                self.errors.push(format!(
+                                    "Line {}: '{}' is not a procedure",
+                                    line, name
+                                ));
                             }
                         }
                     }
                     None => {
-                        self.errors.push(format!("Undefined procedure '{}'", name));
+                        self.errors
+                            .push(format!("Line {}: Undefined procedure '{}'", line, name));
                     }
                 }
                 for arg in args {
@@ -166,6 +173,7 @@ impl<'a> SemanticAnalyzer<'a> {
                 condition,
                 then_stmt,
                 else_stmt,
+                line: _,
             } => {
                 self.analyze_condition(condition)?;
                 self.analyze_statement(then_stmt)?;
@@ -173,30 +181,39 @@ impl<'a> SemanticAnalyzer<'a> {
                     self.analyze_statement(s)?;
                 }
             }
-            Statement::While { condition, body } => {
+            Statement::While {
+                condition,
+                body,
+                line: _,
+            } => {
                 self.analyze_condition(condition)?;
                 self.analyze_statement(body)?;
             }
-            Statement::Read { names } => {
+            Statement::Read { names, line } => {
                 for name in names {
                     match self.symbol_table.resolve(name) {
                         Some(sym) => {
                             if let SymbolType::Constant { .. } = sym.kind {
-                                self.errors
-                                    .push(format!("Cannot read into constant '{}'", name));
+                                self.errors.push(format!(
+                                    "Line {}: Cannot read into constant '{}'",
+                                    line, name
+                                ));
                             }
                             if let SymbolType::Procedure { .. } = sym.kind {
-                                self.errors
-                                    .push(format!("Cannot read into procedure '{}'", name));
+                                self.errors.push(format!(
+                                    "Line {}: Cannot read into procedure '{}'",
+                                    line, name
+                                ));
                             }
                         }
                         None => {
-                            self.errors.push(format!("Undefined variable '{}'", name));
+                            self.errors
+                                .push(format!("Line {}: Undefined variable '{}'", line, name));
                         }
                     }
                 }
             }
-            Statement::Write { exprs } => {
+            Statement::Write { exprs, line: _ } => {
                 for expr in exprs {
                     self.analyze_expr(expr)?;
                 }

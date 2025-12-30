@@ -111,8 +111,8 @@ pub struct Pl0Gui {
     // Visualization
     viz_root: Option<VizNode>,
 
-    // Compilation error
-    compile_error: Option<String>,
+    // Compilation diagnostics
+    diagnostics: Vec<String>,
 }
 
 #[derive(Clone)]
@@ -166,15 +166,33 @@ end";
             input_buffer: String::new(),
             use_optimized_vm: true,
             viz_root: None,
-            compile_error: None,
+            diagnostics: Vec::new(),
         };
         app.compile();
         app
     }
 
+    fn format_parse_error(&self, err: &crate::parser::ParseError) -> String {
+        let lines: Vec<&str> = self.source_code.lines().collect();
+        let mut msg = format!("Line {}, Col {}: {}", err.line, err.col, err.message);
+        
+        if err.line > 0 && err.line <= lines.len() {
+            let line_content = lines[err.line - 1];
+            msg.push_str(&format!("\n    {}", line_content));
+            
+            let indent: String = line_content
+                .chars()
+                .take(err.col - 1)
+                .map(|c| if c.is_whitespace() { c } else { ' ' })
+                .collect();
+            msg.push_str(&format!("\n    {}^", indent));
+        }
+        msg
+    }
+
     fn compile(&mut self) {
         self.status_message = "Compiling...".to_string();
-        self.compile_error = None;
+        self.diagnostics.clear();
         self.tokens.clear();
         self.symbol_table = None;
 
@@ -196,9 +214,10 @@ end";
         match parser.parse() {
             Ok(mut program) => {
                 if !parser.errors.is_empty() {
-                    let err = format!("Parse Error: {:?}", parser.errors.first());
-                    self.status_message = err.clone();
-                    self.compile_error = Some(err);
+                    for err in &parser.errors {
+                        self.diagnostics.push(self.format_parse_error(err));
+                    }
+                    self.status_message = "Parsing Failed".to_string();
                     self.raw_code.clear();
                     self.opt_code.clear();
                     return;
@@ -210,9 +229,8 @@ end";
                 let mut analyzer = SemanticAnalyzer::new(&mut sym_table);
 
                 if let Err(e) = analyzer.analyze(&mut raw_program) {
-                    let err_msg = format!("Semantic Error: {:?}", e);
-                    self.status_message = err_msg.clone();
-                    self.compile_error = Some(err_msg);
+                    self.diagnostics = e;
+                    self.status_message = "Semantic Analysis Failed".to_string();
                     // Even if semantic error, we might want to show symbol table so far?
                     // But usually it fails early. Let's save what we have.
                     self.symbol_table = Some(sym_table);
@@ -236,9 +254,8 @@ end";
                 let mut opt_analyzer = SemanticAnalyzer::new(&mut opt_sym_table);
 
                 if let Err(e) = opt_analyzer.analyze(&mut program) {
-                    let err_msg = format!("Semantic Error (Opt): {:?}", e);
-                    self.status_message = err_msg.clone();
-                    self.compile_error = Some(err_msg);
+                    self.diagnostics = e;
+                    self.status_message = "Semantic Analysis Failed (Opt)".to_string();
                     return;
                 }
 
@@ -256,9 +273,17 @@ end";
                 self.status_message = "Compilation Successful".to_string();
             }
             Err(_) => {
-                let err = format!("Parse Error: {:?}", parser.errors.first());
-                self.status_message = err.clone();
-                self.compile_error = Some(err);
+                // This branch might be unreachable now if we handle errors in Ok, 
+                // but if parse() returns Err, it means catastrophic failure or we changed parser logic.
+                // Let's just show whatever errors we have.
+                if !parser.errors.is_empty() {
+                    for err in &parser.errors {
+                        self.diagnostics.push(self.format_parse_error(err));
+                    }
+                } else {
+                    self.diagnostics.push("Unknown Parse Error".to_string());
+                }
+                self.status_message = "Parsing Failed".to_string();
                 self.raw_code.clear();
                 self.opt_code.clear();
             }
@@ -279,8 +304,8 @@ impl eframe::App for Pl0Gui {
                 ui.selectable_value(&mut self.current_tab, Tab::Runtime, "🚀 Runtime");
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if let Some(err) = &self.compile_error {
-                        ui.colored_label(egui::Color32::RED, err);
+                    if !self.diagnostics.is_empty() {
+                        ui.colored_label(egui::Color32::RED, &self.status_message);
                     } else {
                         ui.label(&self.status_message);
                     }
@@ -314,19 +339,41 @@ impl Pl0Gui {
                     }
         });
 
-        let response = egui::ScrollArea::vertical().show(ui, |ui| {
-            ui.add(
-                egui::TextEdit::multiline(&mut self.source_code)
-                    .font(egui::TextStyle::Monospace)
-                    .code_editor()
-                    .desired_width(f32::INFINITY)
-                    .desired_rows(30)
-                    .lock_focus(true),
-            )
-        });
+        let available_height = ui.available_height();
+        let error_height = if !self.diagnostics.is_empty() {
+            (available_height * 0.3).max(100.0)
+        } else {
+            0.0
+        };
+        let editor_height = available_height - error_height;
 
-        if response.inner.changed() {
-            self.compile();
+        egui::ScrollArea::vertical()
+            .id_salt("editor_scroll")
+            .max_height(editor_height)
+            .show(ui, |ui| {
+                let response = ui.add_sized(
+                    ui.available_size(),
+                    egui::TextEdit::multiline(&mut self.source_code)
+                        .font(egui::TextStyle::Monospace)
+                        .code_editor()
+                        .lock_focus(true),
+                );
+                if response.changed() {
+                    self.compile();
+                }
+            });
+
+        if !self.diagnostics.is_empty() {
+            ui.separator();
+            ui.heading("Diagnostics");
+            egui::ScrollArea::vertical()
+                .id_salt("error_scroll")
+                .show(ui, |ui| {
+                    for diag in &self.diagnostics {
+                        ui.colored_label(egui::Color32::RED, diag);
+                        ui.separator();
+                    }
+                });
         }
     }
 
@@ -833,14 +880,14 @@ fn build_block_node(block: &AstBlock) -> VizNode {
 
 fn build_statement_node(stmt: &Statement) -> VizNode {
     match stmt {
-        Statement::Assignment { name, expr } => {
+        Statement::Assignment { name, expr, .. } => {
             let mut node = VizNode::new(":=", egui::Color32::LIGHT_GREEN);
             node.children
                 .push(VizNode::new(name.clone(), egui::Color32::WHITE));
             node.children.push(build_expr_node(expr));
             node
         }
-        Statement::Call { name, args } => {
+        Statement::Call { name, args, .. } => {
             let mut node = VizNode::new(format!("Call {}", name), egui::Color32::LIGHT_RED);
             for arg in args {
                 node.children.push(build_expr_node(arg));
@@ -858,6 +905,7 @@ fn build_statement_node(stmt: &Statement) -> VizNode {
             condition,
             then_stmt,
             else_stmt,
+            ..
         } => {
             let mut node = VizNode::new("If", egui::Color32::LIGHT_YELLOW);
             node.children.push(build_condition_node(condition));
@@ -867,13 +915,13 @@ fn build_statement_node(stmt: &Statement) -> VizNode {
             }
             node
         }
-        Statement::While { condition, body } => {
+        Statement::While { condition, body, .. } => {
             let mut node = VizNode::new("While", egui::Color32::LIGHT_YELLOW);
             node.children.push(build_condition_node(condition));
             node.children.push(build_statement_node(body));
             node
         }
-        Statement::Read { names } => {
+        Statement::Read { names, .. } => {
             let mut node = VizNode::new("Read", egui::Color32::LIGHT_BLUE);
             for name in names {
                 node.children
@@ -881,7 +929,7 @@ fn build_statement_node(stmt: &Statement) -> VizNode {
             }
             node
         }
-        Statement::Write { exprs } => {
+        Statement::Write { exprs, .. } => {
             let mut node = VizNode::new("Write", egui::Color32::LIGHT_BLUE);
             for expr in exprs {
                 node.children.push(build_expr_node(expr));

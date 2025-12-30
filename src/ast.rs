@@ -32,10 +32,12 @@ pub enum Statement {
     Assignment {
         name: String,
         expr: Expr,
+        line: usize,
     },
     Call {
         name: String,
         args: Vec<Expr>,
+        line: usize,
     },
     BeginEnd {
         statements: Vec<Statement>,
@@ -44,16 +46,20 @@ pub enum Statement {
         condition: Condition,
         then_stmt: Box<Statement>,
         else_stmt: Option<Box<Statement>>,
+        line: usize,
     },
     While {
         condition: Condition,
         body: Box<Statement>,
+        line: usize,
     },
     Read {
         names: Vec<String>,
+        line: usize,
     },
     Write {
         exprs: Vec<Expr>,
+        line: usize,
     },
     Empty,
 }

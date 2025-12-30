@@ -87,7 +87,7 @@ impl CodeGenerator {
 
     fn generate_statement(&mut self, stmt: &Statement, symbol_table: &mut SymbolTable) {
         match stmt {
-            Statement::Assignment { name, expr } => {
+            Statement::Assignment { name, expr, .. } => {
                 self.generate_expr(expr, symbol_table);
                 let sym = symbol_table.resolve(name).expect("Undefined variable");
                 match sym.kind {
@@ -97,7 +97,7 @@ impl CodeGenerator {
                     _ => panic!("Cannot assign to non-variable"),
                 }
             }
-            Statement::Call { name, args } => {
+            Statement::Call { name, args, .. } => {
                 for arg in args {
                     self.generate_expr(arg, symbol_table);
                 }
@@ -122,6 +122,7 @@ impl CodeGenerator {
                 condition,
                 then_stmt,
                 else_stmt,
+                ..
             } => {
                 self.generate_condition(condition, symbol_table);
                 let jpc_idx = self.code.len();
@@ -139,7 +140,7 @@ impl CodeGenerator {
                     self.code[jpc_idx].a = self.code.len() as i64;
                 }
             }
-            Statement::While { condition, body } => {
+            Statement::While { condition, body, .. } => {
                 let start_idx = self.code.len();
                 self.generate_condition(condition, symbol_table);
                 let jpc_idx = self.code.len();
@@ -150,7 +151,7 @@ impl CodeGenerator {
 
                 self.code[jpc_idx].a = self.code.len() as i64;
             }
-            Statement::Read { names } => {
+            Statement::Read { names, .. } => {
                 for name in names {
                     self.emit(OpCode::OPR, 0, Operator::RED as i64);
                     let sym = symbol_table.resolve(name).expect("Undefined variable");
@@ -162,7 +163,7 @@ impl CodeGenerator {
                     }
                 }
             }
-            Statement::Write { exprs } => {
+            Statement::Write { exprs, .. } => {
                 for expr in exprs {
                     self.generate_expr(expr, symbol_table);
                     self.emit(OpCode::OPR, 0, Operator::WRT as i64);
