@@ -24,6 +24,12 @@ pub struct SymbolTable {
     pub current_scope_id: usize,
 }
 
+impl Default for SymbolTable {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SymbolTable {
     pub fn new() -> Self {
         let root = Scope::new(None);

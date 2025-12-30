@@ -14,7 +14,7 @@ use std::time::{Duration, Instant};
 enum Tab {
     Editor,
     Tokens,
-    AST,
+    Ast,
     Symbols,
     Optimization,
     Runtime,
@@ -122,7 +122,6 @@ struct VizNode {
     children: Vec<VizNode>,
     pos: egui::Pos2,
     width: f32,
-    total_width: f32, // Subtree width
 }
 
 impl VizNode {
@@ -133,7 +132,6 @@ impl VizNode {
             children: Vec::new(),
             pos: egui::Pos2::ZERO,
             width: 0.0,
-            total_width: 0.0,
         }
     }
 }
@@ -266,7 +264,7 @@ impl eframe::App for Pl0Gui {
             ui.horizontal(|ui| {
                 ui.selectable_value(&mut self.current_tab, Tab::Editor, "📝 Editor");
                 ui.selectable_value(&mut self.current_tab, Tab::Tokens, "🔤 Tokens");
-                ui.selectable_value(&mut self.current_tab, Tab::AST, "🌳 AST");
+                ui.selectable_value(&mut self.current_tab, Tab::Ast, "🌳 AST");
                 ui.selectable_value(&mut self.current_tab, Tab::Symbols, "📚 Symbols");
                 ui.selectable_value(&mut self.current_tab, Tab::Optimization, "⚡ Optimization");
                 ui.selectable_value(&mut self.current_tab, Tab::Runtime, "🚀 Runtime");
@@ -285,7 +283,7 @@ impl eframe::App for Pl0Gui {
         egui::CentralPanel::default().show(ctx, |ui| match self.current_tab {
             Tab::Editor => self.show_editor(ui),
             Tab::Tokens => self.show_tokens(ui),
-            Tab::AST => self.show_ast(ui),
+            Tab::Ast => self.show_ast(ui),
             Tab::Symbols => self.show_symbols(ui),
             Tab::Optimization => self.show_optimization(ui),
             Tab::Runtime => self.show_runtime(ui, ctx),
@@ -297,17 +295,14 @@ impl Pl0Gui {
     fn show_editor(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             ui.heading("Source Code");
-            if ui.button("📂 Open File...").clicked() {
-                if let Some(path) = rfd::FileDialog::new()
+            if ui.button("📂 Open File...").clicked()
+                && let Some(path) = rfd::FileDialog::new()
                     .add_filter("PL/0 Source", &["pl0", "txt"])
                     .pick_file()
-                {
-                    if let Ok(content) = std::fs::read_to_string(path) {
+                    && let Ok(content) = std::fs::read_to_string(path) {
                         self.source_code = content;
                         self.compile();
                     }
-                }
-            }
         });
 
         let response = egui::ScrollArea::vertical().show(ui, |ui| {
@@ -444,161 +439,7 @@ impl Pl0Gui {
         }
     }
 
-    fn format_operator(&self, op: &crate::types::Operator) -> String {
-        match op {
-            crate::types::Operator::ADD => "+".to_string(),
-            crate::types::Operator::SUB => "-".to_string(),
-            crate::types::Operator::MUL => "*".to_string(),
-            crate::types::Operator::DIV => "/".to_string(),
-            crate::types::Operator::EQL => "=".to_string(),
-            crate::types::Operator::NEQ => "#".to_string(),
-            crate::types::Operator::LSS => "<".to_string(),
-            crate::types::Operator::LEQ => "<=".to_string(),
-            crate::types::Operator::GTR => ">".to_string(),
-            crate::types::Operator::GEQ => ">=".to_string(),
-            crate::types::Operator::ODD => "odd".to_string(),
-            crate::types::Operator::NEG => "-".to_string(),
-            _ => format!("{:?}", op),
-        }
-    }
 
-    fn format_expr(&self, expr: &crate::ast::Expr) -> String {
-        match expr {
-            crate::ast::Expr::Binary { left, op, right } => {
-                format!(
-                    "({} {} {})",
-                    self.format_expr(left),
-                    self.format_operator(op),
-                    self.format_expr(right)
-                )
-            }
-            crate::ast::Expr::Unary { op, expr } => {
-                format!("({}{})", self.format_operator(op), self.format_expr(expr))
-            }
-            crate::ast::Expr::Number(n) => n.to_string(),
-            crate::ast::Expr::Identifier(id) => id.clone(),
-        }
-    }
-
-    fn format_condition(&self, cond: &crate::ast::Condition) -> String {
-        match cond {
-            crate::ast::Condition::Odd { expr } => {
-                format!("odd {}", self.format_expr(expr))
-            }
-            crate::ast::Condition::Compare { left, op, right } => {
-                format!(
-                    "{} {} {}",
-                    self.format_expr(left),
-                    self.format_operator(op),
-                    self.format_expr(right)
-                )
-            }
-        }
-    }
-
-    fn draw_block(&self, ui: &mut egui::Ui, block: &AstBlock, label: &str) {
-        egui::CollapsingHeader::new(label)
-            .default_open(true)
-            .show(ui, |ui| {
-                if !block.consts.is_empty() {
-                    ui.label(egui::RichText::new("Constants:").strong());
-                    for c in &block.consts {
-                        ui.label(format!("{} = {}", c.name, c.value));
-                    }
-                }
-
-                if !block.vars.is_empty() {
-                    ui.label(egui::RichText::new("Variables:").strong());
-                    ui.label(block.vars.join(", "));
-                }
-
-                if !block.procedures.is_empty() {
-                    ui.label(egui::RichText::new("Procedures:").strong());
-                    for p in &block.procedures {
-                        let label = if p.params.is_empty() {
-                            format!("Procedure {}", p.name)
-                        } else {
-                            format!("Procedure {}({})", p.name, p.params.join(", "))
-                        };
-                        self.draw_block(ui, &p.block, &label);
-                    }
-                }
-
-                ui.separator();
-                self.draw_statement(ui, &block.statement);
-            });
-    }
-
-    fn draw_statement(&self, ui: &mut egui::Ui, stmt: &Statement) {
-        match stmt {
-            Statement::Assignment { name, expr } => {
-                ui.label(format!("Assign: {} := {}", name, self.format_expr(expr)));
-            }
-            Statement::Call { name, args } => {
-                if args.is_empty() {
-                    ui.label(format!("Call: {}", name));
-                } else {
-                    let args_str = args
-                        .iter()
-                        .map(|e| self.format_expr(e))
-                        .collect::<Vec<_>>()
-                        .join(", ");
-                    ui.label(format!("Call: {}({})", name, args_str));
-                }
-            }
-            Statement::BeginEnd { statements } => {
-                egui::CollapsingHeader::new("Begin ... End")
-                    .default_open(true)
-                    .show(ui, |ui| {
-                        for s in statements {
-                            self.draw_statement(ui, s);
-                        }
-                    });
-            }
-            Statement::If {
-                condition,
-                then_stmt,
-                else_stmt,
-            } => {
-                egui::CollapsingHeader::new(format!(
-                    "If {} Then",
-                    self.format_condition(condition)
-                ))
-                .default_open(true)
-                .show(ui, |ui| {
-                    self.draw_statement(ui, then_stmt);
-                    if let Some(else_s) = else_stmt {
-                        ui.label("Else");
-                        self.draw_statement(ui, else_s);
-                    }
-                });
-            }
-            Statement::While { condition, body } => {
-                egui::CollapsingHeader::new(format!(
-                    "While {} Do",
-                    self.format_condition(condition)
-                ))
-                .default_open(true)
-                .show(ui, |ui| {
-                    self.draw_statement(ui, body);
-                });
-            }
-            Statement::Read { names } => {
-                ui.label(format!("Read: {}", names.join(", ")));
-            }
-            Statement::Write { exprs } => {
-                let exprs_str = exprs
-                    .iter()
-                    .map(|e| self.format_expr(e))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                ui.label(format!("Write: {}", exprs_str));
-            }
-            Statement::Empty => {
-                ui.label("Empty");
-            }
-        }
-    }
 
     fn show_optimization(&self, ui: &mut egui::Ui) {
         let diffs = compute_diff(&self.raw_code, &self.opt_code);
@@ -895,13 +736,12 @@ impl Pl0Gui {
                             );
 
                             // Handle Enter key
-                            if (response.lost_focus()
+                            if ((response.lost_focus()
                                 && ui.input(|i| i.key_pressed(egui::Key::Enter)))
                                 || (response.has_focus()
-                                    && ui.input(|i| i.key_pressed(egui::Key::Enter)))
-                            {
-                                if !self.input_buffer.is_empty() {
-                                    if let Ok(val) = self.input_buffer.trim().parse::<i64>() {
+                                    && ui.input(|i| i.key_pressed(egui::Key::Enter))))
+                                && !self.input_buffer.is_empty()
+                                    && let Ok(val) = self.input_buffer.trim().parse::<i64>() {
                                         self.vm.input_queue.push(val);
                                         // Echo input to output
                                         self.vm.output.push(format!("> {}", val));
@@ -914,8 +754,6 @@ impl Pl0Gui {
                                         // Keep focus
                                         response.request_focus();
                                     }
-                                }
-                            }
 
                             // Auto-focus if waiting
                             if self.vm.state == VMState::WaitingForInput && !response.has_focus() {
@@ -1110,7 +948,7 @@ fn layout_viz_tree(node: &mut VizNode, depth: usize, next_x: &mut f32) {
         node.width = node_width;
         *next_x += node_width + spacing_x;
     } else {
-        let start_x = *next_x;
+        let _start_x = *next_x;
         for child in &mut node.children {
             layout_viz_tree(child, depth + 1, next_x);
         }

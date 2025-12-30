@@ -126,7 +126,7 @@ fn optimize_condition(cond: &mut Condition) {
     }
 }
 
-fn optimize_block_dag(statements: &mut Vec<Statement>) {
+fn optimize_block_dag(statements: &mut [Statement]) {
     let mut available_exprs: HashMap<Expr, String> = HashMap::new();
 
     for stmt in statements.iter_mut() {
@@ -143,11 +143,10 @@ fn optimize_block_dag(statements: &mut Vec<Statement>) {
                 available_exprs.retain(|k, _| !expr_uses_var(k, name));
 
                 // 3. Add (if not replaced and complex)
-                if !replaced && !matches!(expr, Expr::Number(_) | Expr::Identifier(_)) {
-                    if !expr_uses_var(expr, name) {
+                if !replaced && !matches!(expr, Expr::Number(_) | Expr::Identifier(_))
+                    && !expr_uses_var(expr, name) {
                         available_exprs.insert(expr.clone(), name.clone());
                     }
-                }
             }
             Statement::Read { names } => {
                 for name in names {
@@ -187,11 +186,10 @@ fn try_licm(stmt: &mut Statement) {
                 let mut i = 0;
                 while i < statements.len() {
                     let mut hoist = false;
-                    if let Statement::Assignment { name: _, expr } = &statements[i] {
-                        if !expr_depends_on(expr, &modified) {
+                    if let Statement::Assignment { name: _, expr } = &statements[i]
+                        && !expr_depends_on(expr, &modified) {
                             hoist = true;
                         }
-                    }
 
                     if hoist {
                         invariant_stmts.push(statements.remove(i));
@@ -300,12 +298,11 @@ fn optimize_expr(expr: &mut Expr) {
                 }
             }
             // x - 0 = x
-            if *op == Operator::SUB {
-                if let Expr::Number(0) = right.as_ref() {
+            if *op == Operator::SUB
+                && let Expr::Number(0) = right.as_ref() {
                     *expr = *left.clone();
                     return;
                 }
-            }
             // x * 1 = x, x * 0 = 0
             if *op == Operator::MUL {
                 if let Expr::Number(1) = right.as_ref() {
@@ -326,20 +323,17 @@ fn optimize_expr(expr: &mut Expr) {
                 }
             }
             // x / 1 = x
-            if *op == Operator::DIV {
-                if let Expr::Number(1) = right.as_ref() {
+            if *op == Operator::DIV
+                && let Expr::Number(1) = right.as_ref() {
                     *expr = *left.clone();
-                    return;
                 }
-            }
         }
         Expr::Unary { op, expr: inner } => {
             optimize_expr(inner);
-            if let Expr::Number(val) = inner.as_ref() {
-                if *op == Operator::NEG {
+            if let Expr::Number(val) = inner.as_ref()
+                && *op == Operator::NEG {
                     *expr = Expr::Number(-val);
                 }
-            }
         }
         _ => {}
     }

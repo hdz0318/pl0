@@ -15,7 +15,10 @@ pub struct Parser<'a> {
     verbose: bool,
 }
 
-type ParseResult<T> = Result<T, ()>;
+#[derive(Debug)]
+pub struct ParseFailure;
+
+type ParseResult<T> = Result<T, ParseFailure>;
 
 impl<'a> Parser<'a> {
     pub fn new(lexer: Lexer<'a>, verbose: bool) -> Self {
@@ -32,7 +35,7 @@ impl<'a> Parser<'a> {
             col: self.lexer.token_col,
             message: msg.to_string(),
         });
-        Err(())
+        Err(ParseFailure)
     }
 
     fn next(&mut self) {
@@ -63,12 +66,12 @@ impl<'a> Parser<'a> {
                 self.next();
             } else {
                 self.error("Expected program name")?;
-                return Err(());
+                return Err(ParseFailure);
             }
             self.expect(TokenType::Semicolon)?;
         } else {
             self.error("Expected 'program'")?;
-            return Err(());
+            return Err(ParseFailure);
         }
 
         let block = self.block()?;
@@ -115,7 +118,7 @@ impl<'a> Parser<'a> {
                     self.next();
                 } else {
                     self.error("Expected :=")?;
-                    return Err(());
+                    return Err(ParseFailure);
                 }
 
                 if let TokenType::Number(val) = self.lexer.current_token {
@@ -123,11 +126,11 @@ impl<'a> Parser<'a> {
                     self.next();
                 } else {
                     self.error("Expected number")?;
-                    return Err(());
+                    return Err(ParseFailure);
                 }
             } else {
                 self.error("Expected identifier")?;
-                return Err(());
+                return Err(ParseFailure);
             }
 
             if self.lexer.current_token == TokenType::Comma {
@@ -149,7 +152,7 @@ impl<'a> Parser<'a> {
                 self.next();
             } else {
                 self.error("Expected identifier")?;
-                return Err(());
+                return Err(ParseFailure);
             }
 
             if self.lexer.current_token == TokenType::Comma {
@@ -169,7 +172,7 @@ impl<'a> Parser<'a> {
             name
         } else {
             self.error("Expected identifier")?;
-            return Err(());
+            return Err(ParseFailure);
         };
 
         let mut params = Vec::new();
@@ -181,7 +184,7 @@ impl<'a> Parser<'a> {
                     self.next();
                 } else {
                     self.error("Expected parameter name")?;
-                    return Err(());
+                    return Err(ParseFailure);
                 }
 
                 if self.lexer.current_token == TokenType::Comma {
@@ -242,7 +245,7 @@ impl<'a> Parser<'a> {
                     Ok(Statement::Assignment { name, expr })
                 } else {
                     self.error("Expected :=")?;
-                    Err(())
+                    Err(ParseFailure)
                 }
             }
             TokenType::Call => {
@@ -265,7 +268,7 @@ impl<'a> Parser<'a> {
                     Ok(Statement::Call { name, args })
                 } else {
                     self.error("Expected identifier")?;
-                    Err(())
+                    Err(ParseFailure)
                 }
             }
             TokenType::Begin => {
@@ -278,27 +281,25 @@ impl<'a> Parser<'a> {
                     }
                     if self.lexer.current_token == TokenType::Eof {
                         self.error("Expected 'end'")?;
-                        return Err(());
+                        return Err(ParseFailure);
                     }
 
                     match self.statement() {
                         Ok(stmt) => {
                             if !matches!(stmt, Statement::Empty) {
                                 statements.push(stmt);
-                            } else {
-                                if self.lexer.current_token != TokenType::Semicolon
-                                    && self.lexer.current_token != TokenType::End
-                                {
-                                    self.errors.push(ParseError {
-                                        line: self.lexer.token_line,
-                                        col: self.lexer.token_col,
-                                        message: format!(
-                                            "Unexpected token: {:?}",
-                                            self.lexer.current_token
-                                        ),
-                                    });
-                                    self.synchronize();
-                                }
+                            } else if self.lexer.current_token != TokenType::Semicolon
+                                && self.lexer.current_token != TokenType::End
+                            {
+                                self.errors.push(ParseError {
+                                    line: self.lexer.token_line,
+                                    col: self.lexer.token_col,
+                                    message: format!(
+                                        "Unexpected token: {:?}",
+                                        self.lexer.current_token
+                                    ),
+                                });
+                                self.synchronize();
                             }
                         }
                         Err(_) => {
@@ -310,26 +311,24 @@ impl<'a> Parser<'a> {
                         self.next();
                     } else if self.lexer.current_token == TokenType::End {
                         break;
-                    } else {
-                        if self.is_start_of_statement() {
-                            self.errors.push(ParseError {
-                                line: self.lexer.token_line,
-                                col: self.lexer.token_col,
-                                message: "Expected ';'".to_string(),
-                            });
-                        } else if self.lexer.current_token != TokenType::Eof {
-                            // If we haven't already synchronized (which we would have if statement was Empty and invalid)
-                            // We might be here if statement was valid but followed by garbage.
-                            self.errors.push(ParseError {
-                                line: self.lexer.token_line,
-                                col: self.lexer.token_col,
-                                message: format!(
-                                    "Unexpected token: {:?}",
-                                    self.lexer.current_token
-                                ),
-                            });
-                            self.synchronize();
-                        }
+                    } else if self.is_start_of_statement() {
+                        self.errors.push(ParseError {
+                            line: self.lexer.token_line,
+                            col: self.lexer.token_col,
+                            message: "Expected ';'".to_string(),
+                        });
+                    } else if self.lexer.current_token != TokenType::Eof {
+                        // If we haven't already synchronized (which we would have if statement was Empty and invalid)
+                        // We might be here if statement was valid but followed by garbage.
+                        self.errors.push(ParseError {
+                            line: self.lexer.token_line,
+                            col: self.lexer.token_col,
+                            message: format!(
+                                "Unexpected token: {:?}",
+                                self.lexer.current_token
+                            ),
+                        });
+                        self.synchronize();
                     }
                 }
                 self.expect(TokenType::End)?;
@@ -370,7 +369,7 @@ impl<'a> Parser<'a> {
                             self.next();
                         } else {
                             self.error("Expected identifier")?;
-                            return Err(());
+                            return Err(ParseFailure);
                         }
                         if self.lexer.current_token == TokenType::Comma {
                             self.next();
@@ -379,14 +378,12 @@ impl<'a> Parser<'a> {
                         }
                     }
                     self.expect(TokenType::RParen)?;
+                } else if let TokenType::Identifier(name) = self.lexer.current_token.clone() {
+                    names.push(name);
+                    self.next();
                 } else {
-                    if let TokenType::Identifier(name) = self.lexer.current_token.clone() {
-                        names.push(name);
-                        self.next();
-                    } else {
-                        self.error("Expected identifier or '('")?;
-                        return Err(());
-                    }
+                    self.error("Expected identifier or '('")?;
+                    return Err(ParseFailure);
                 }
                 Ok(Statement::Read { names })
             }
@@ -429,7 +426,7 @@ impl<'a> Parser<'a> {
                 TokenType::GreaterEqual => Operator::GEQ,
                 _ => {
                     self.error("Expected comparison operator")?;
-                    return Err(());
+                    return Err(ParseFailure);
                 }
             };
             self.next();
@@ -524,7 +521,7 @@ impl<'a> Parser<'a> {
             }
             _ => {
                 self.error("Expected identifier, number, or '('")?;
-                Err(())
+                Err(ParseFailure)
             }
         }
     }

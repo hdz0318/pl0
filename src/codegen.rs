@@ -7,6 +7,12 @@ pub struct CodeGenerator {
     level: usize,
 }
 
+impl Default for CodeGenerator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CodeGenerator {
     pub fn new() -> Self {
         Self {
@@ -54,11 +60,10 @@ impl CodeGenerator {
 
             // Update procedure address in symbol table
             let scope = &mut symbol_table.scopes[symbol_table.current_scope_id];
-            if let Some(sym) = scope.symbols.get_mut(&proc_decl.name) {
-                if let SymbolType::Procedure { ref mut addr, .. } = sym.kind {
+            if let Some(sym) = scope.symbols.get_mut(&proc_decl.name)
+                && let SymbolType::Procedure { ref mut addr, .. } = sym.kind {
                     *addr = proc_addr as i64;
                 }
-            }
 
             self.level += 1;
             self.generate_block(&proc_decl.block, symbol_table);
