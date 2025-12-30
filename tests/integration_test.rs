@@ -1,6 +1,6 @@
 use pl0::codegen::CodeGenerator;
 use pl0::lexer::Lexer;
-use pl0::optimizer::{optimize, optimize_ast};
+use pl0::optimizer::optimize_ast;
 use pl0::parser::Parser;
 use pl0::semantic::SemanticAnalyzer;
 use pl0::symbol_table::SymbolTable;
@@ -80,9 +80,7 @@ fn test_all_testcases() {
             optimize_ast(&mut program);
 
             let mut generator = CodeGenerator::new();
-            let code = generator.generate(&program, &mut symbol_table);
-
-            optimize(code)
+            generator.generate(&program, &mut symbol_table)
         }));
 
         match result {
