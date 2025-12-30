@@ -103,7 +103,7 @@ impl Operator {
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Instruction {
     pub f: OpCode,
     pub l: usize, // Level difference

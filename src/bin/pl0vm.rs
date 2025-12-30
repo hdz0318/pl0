@@ -1,4 +1,3 @@
-use pl0::tui_interface;
 use pl0::types::{Instruction, OpCode};
 use pl0::vm::VM;
 use std::env;
@@ -24,23 +23,12 @@ fn parse_opcode(s: &str) -> OpCode {
 fn main() {
     let args: Vec<String> = env::args().collect();
 
-    let mut file_path = None;
-    let mut use_tui = true;
-
-    for arg in args.iter().skip(1) {
-        if arg == "--no-tui" {
-            use_tui = false;
-        } else if !arg.starts_with("--") {
-            file_path = Some(arg);
-        }
+    if args.len() < 2 {
+        eprintln!("Usage: {} <asm_file>", args[0]);
+        std::process::exit(1);
     }
 
-    let path = if let Some(p) = file_path {
-        p
-    } else {
-        eprintln!("Usage: {} <asm_file> [--no-tui]", args[0]);
-        std::process::exit(1);
-    };
+    let path = &args[1];
 
     let file = File::open(path).expect("Failed to open asm file");
     let reader = BufReader::new(file);
@@ -57,18 +45,9 @@ fn main() {
         }
     }
 
-    if !use_tui {
-        println!("Loaded {} instructions.", instructions.len());
-        println!("Executing...");
-    }
+    println!("Loaded {} instructions.", instructions.len());
+    println!("Executing...");
 
     let mut vm = VM::new(instructions);
-
-    if use_tui {
-        if let Err(e) = tui_interface::run_tui(vm) {
-            eprintln!("Error running TUI: {}", e);
-        }
-    } else {
-        vm.interpret();
-    }
+    vm.interpret();
 }

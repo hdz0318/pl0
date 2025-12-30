@@ -13,15 +13,89 @@ use std::time::{Duration, Instant};
 #[derive(PartialEq)]
 enum Tab {
     Editor,
+    Tokens,
     AST,
+    Symbols,
     Optimization,
     Runtime,
+}
+
+struct DiffLine {
+    raw: Option<(usize, Instruction)>,
+    opt: Option<(usize, Instruction)>,
+}
+
+fn compute_diff(raw: &[Instruction], opt: &[Instruction]) -> Vec<DiffLine> {
+    let n = raw.len();
+    let m = opt.len();
+    // DP table for LCS length
+    let mut dp = vec![vec![0; m + 1]; n + 1];
+
+    for i in 1..=n {
+        for j in 1..=m {
+            // Instruction derives PartialEq
+            if raw[i - 1] == opt[j - 1] {
+                dp[i][j] = dp[i - 1][j - 1] + 1;
+            } else {
+                dp[i][j] = dp[i - 1][j].max(dp[i][j - 1]);
+            }
+        }
+    }
+
+    // Backtrack to find the diff
+    let mut i = n;
+    let mut j = m;
+    let mut diffs = Vec::new();
+
+    while i > 0 && j > 0 {
+        if raw[i - 1] == opt[j - 1] {
+            diffs.push(DiffLine {
+                raw: Some((i - 1, raw[i - 1])),
+                opt: Some((j - 1, opt[j - 1])),
+            });
+            i -= 1;
+            j -= 1;
+        } else if dp[i - 1][j] >= dp[i][j - 1] {
+            diffs.push(DiffLine {
+                raw: Some((i - 1, raw[i - 1])),
+                opt: None,
+            });
+            i -= 1;
+        } else {
+            diffs.push(DiffLine {
+                raw: None,
+                opt: Some((j - 1, opt[j - 1])),
+            });
+            j -= 1;
+        }
+    }
+
+    while i > 0 {
+        diffs.push(DiffLine {
+            raw: Some((i - 1, raw[i - 1])),
+            opt: None,
+        });
+        i -= 1;
+    }
+
+    while j > 0 {
+        diffs.push(DiffLine {
+            raw: None,
+            opt: Some((j - 1, opt[j - 1])),
+        });
+        j -= 1;
+    }
+
+    diffs.reverse();
+    diffs
 }
 
 pub struct Pl0Gui {
     // State
     source_code: String,
+    tokens: Vec<(usize, usize, crate::types::TokenType)>,
     ast: Option<Program>,
+    symbol_table: Option<SymbolTable>,
     raw_code: Vec<Instruction>,
     opt_code: Vec<Instruction>,
     vm: VM,
@@ -32,9 +106,36 @@ pub struct Pl0Gui {
     auto_run: bool,
     last_tick: Instant,
     input_buffer: String,
+    use_optimized_vm: bool,
+
+    // Visualization
+    viz_root: Option<VizNode>,
 
     // Compilation error
     compile_error: Option<String>,
+}
+
+#[derive(Clone)]
+struct VizNode {
+    label: String,
+    color: egui::Color32,
+    children: Vec<VizNode>,
+    pos: egui::Pos2,
+    width: f32,
+    total_width: f32, // Subtree width
+}
+
+impl VizNode {
+    fn new(label: impl Into<String>, color: egui::Color32) -> Self {
+        Self {
+            label: label.into(),
+            color,
+            children: Vec::new(),
+            pos: egui::Pos2::ZERO,
+            width: 0.0,
+            total_width: 0.0,
+        }
+    }
 }
 
 impl Pl0Gui {
@@ -54,7 +155,9 @@ end";
 
         let mut app = Self {
             source_code: default_code.to_string(),
+            tokens: Vec::new(),
             ast: None,
+            symbol_table: None,
             raw_code: vec![],
             opt_code: vec![],
             vm: VM::new(vec![]),
@@ -63,6 +166,8 @@ end";
             auto_run: false,
             last_tick: Instant::now(),
             input_buffer: String::new(),
+            use_optimized_vm: true,
+            viz_root: None,
             compile_error: None,
         };
         app.compile();
@@ -72,6 +177,20 @@ end";
     fn compile(&mut self) {
         self.status_message = "Compiling...".to_string();
         self.compile_error = None;
+        self.tokens.clear();
+        self.symbol_table = None;
+
+        // 0. Lexical Analysis (Visualization)
+        let mut lexer_viz = Lexer::new(&self.source_code);
+        loop {
+            let token = lexer_viz.current_token.clone();
+            self.tokens
+                .push((lexer_viz.token_line, lexer_viz.token_col, token.clone()));
+            if token == crate::types::TokenType::Eof {
+                break;
+            }
+            lexer_viz.next_token();
+        }
 
         let lexer = Lexer::new(&self.source_code);
         let mut parser = Parser::new(lexer, false);
@@ -87,10 +206,19 @@ end";
                     let err_msg = format!("Semantic Error: {:?}", e);
                     self.status_message = err_msg.clone();
                     self.compile_error = Some(err_msg);
+                    // Even if semantic error, we might want to show symbol table so far?
+                    // But usually it fails early. Let's save what we have.
+                    self.symbol_table = Some(sym_table);
                     return;
                 }
 
+                self.symbol_table = Some(sym_table.clone()); // Save for visualization
                 self.ast = Some(raw_program.clone());
+
+                // Build Visualization Tree
+                let mut root = build_viz_tree(&raw_program);
+                layout_viz_tree(&mut root, 0, &mut 0.0);
+                self.viz_root = Some(root);
 
                 let mut generator = CodeGenerator::new();
                 self.raw_code = generator.generate(&raw_program, &mut sym_table);
@@ -112,9 +240,12 @@ end";
 
                 // 3. Peephole Optimization (Removed)
                 self.opt_code = code_from_ast;
-
-                // 4. Initialize VM with Optimized Code
-                self.vm = VM::new(self.opt_code.clone());
+                let code_to_run = if self.use_optimized_vm {
+                    self.opt_code.clone()
+                } else {
+                    self.raw_code.clone()
+                };
+                self.vm = VM::new(code_to_run);
                 self.status_message = "Compilation Successful".to_string();
             }
             Err(_) => {
@@ -134,7 +265,9 @@ impl eframe::App for Pl0Gui {
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             ui.horizontal(|ui| {
                 ui.selectable_value(&mut self.current_tab, Tab::Editor, "📝 Editor");
+                ui.selectable_value(&mut self.current_tab, Tab::Tokens, "🔤 Tokens");
                 ui.selectable_value(&mut self.current_tab, Tab::AST, "🌳 AST");
+                ui.selectable_value(&mut self.current_tab, Tab::Symbols, "📚 Symbols");
                 ui.selectable_value(&mut self.current_tab, Tab::Optimization, "⚡ Optimization");
                 ui.selectable_value(&mut self.current_tab, Tab::Runtime, "🚀 Runtime");
 
@@ -151,7 +284,9 @@ impl eframe::App for Pl0Gui {
         // Central Panel: Content
         egui::CentralPanel::default().show(ctx, |ui| match self.current_tab {
             Tab::Editor => self.show_editor(ui),
+            Tab::Tokens => self.show_tokens(ui),
             Tab::AST => self.show_ast(ui),
+            Tab::Symbols => self.show_symbols(ui),
             Tab::Optimization => self.show_optimization(ui),
             Tab::Runtime => self.show_runtime(ui, ctx),
         });
@@ -177,15 +312,173 @@ impl Pl0Gui {
         }
     }
 
-    fn show_ast(&self, ui: &mut egui::Ui) {
-        ui.heading("Abstract Syntax Tree");
+    fn show_tokens(&self, ui: &mut egui::Ui) {
+        ui.heading("Lexical Analysis (Tokens)");
         egui::ScrollArea::vertical().show(ui, |ui| {
-            if let Some(program) = &self.ast {
-                self.draw_block(ui, &program.block, "Program Block");
-            } else {
-                ui.label("No AST available. Fix compilation errors.");
-            }
+            egui::Grid::new("tokens_grid")
+                .striped(true)
+                .spacing([20.0, 4.0])
+                .show(ui, |ui| {
+                    ui.label(egui::RichText::new("Line:Col").strong());
+                    ui.label(egui::RichText::new("Token Type").strong());
+                    ui.label(egui::RichText::new("Value").strong());
+                    ui.end_row();
+
+                    for (line, col, token) in &self.tokens {
+                        ui.monospace(format!("{}:{}", line, col));
+                        match token {
+                            crate::types::TokenType::Identifier(s) => {
+                                ui.monospace("Identifier");
+                                ui.monospace(s);
+                            }
+                            crate::types::TokenType::Number(n) => {
+                                ui.monospace("Number");
+                                ui.monospace(n.to_string());
+                            }
+                            _ => {
+                                ui.monospace(format!("{:?}", token));
+                                ui.label("");
+                            }
+                        }
+                        ui.end_row();
+                    }
+                });
         });
+    }
+
+    fn show_symbols(&self, ui: &mut egui::Ui) {
+        ui.heading("Symbol Table");
+        if let Some(sym_table) = &self.symbol_table {
+            egui::ScrollArea::vertical().show(ui, |ui| {
+                for (i, scope) in sym_table.scopes.iter().enumerate() {
+                    egui::CollapsingHeader::new(format!("Scope {}", i))
+                        .default_open(true)
+                        .show(ui, |ui| {
+                            if let Some(parent) = scope.parent {
+                                ui.label(format!("Parent Scope: {}", parent));
+                            } else {
+                                ui.label("Root Scope");
+                            }
+
+                            if !scope.symbols.is_empty() {
+                                egui::Grid::new(format!("scope_{}_grid", i))
+                                    .striped(true)
+                                    .spacing([20.0, 4.0])
+                                    .show(ui, |ui| {
+                                        ui.label(egui::RichText::new("Name").strong());
+                                        ui.label(egui::RichText::new("Kind").strong());
+                                        ui.label(egui::RichText::new("Details").strong());
+                                        ui.end_row();
+
+                                        for (name, sym) in &scope.symbols {
+                                            ui.monospace(name);
+                                            match &sym.kind {
+                                                crate::types::SymbolType::Constant { val } => {
+                                                    ui.monospace("Constant");
+                                                    ui.monospace(format!("Value: {}", val));
+                                                }
+                                                crate::types::SymbolType::Variable {
+                                                    level,
+                                                    addr,
+                                                } => {
+                                                    ui.monospace("Variable");
+                                                    ui.monospace(format!(
+                                                        "L: {}, A: {}",
+                                                        level, addr
+                                                    ));
+                                                }
+                                                crate::types::SymbolType::Procedure {
+                                                    level,
+                                                    addr,
+                                                } => {
+                                                    ui.monospace("Procedure");
+                                                    ui.monospace(format!(
+                                                        "L: {}, A: {}",
+                                                        level, addr
+                                                    ));
+                                                }
+                                            }
+                                            ui.end_row();
+                                        }
+                                    });
+                            } else {
+                                ui.label("No symbols in this scope.");
+                            }
+                        });
+                }
+            });
+        } else {
+            ui.label("No symbol table available.");
+        }
+    }
+
+    fn show_ast(&self, ui: &mut egui::Ui) {
+        ui.heading("Abstract Syntax Tree (Visualized)");
+        if let Some(root) = &self.viz_root {
+            egui::ScrollArea::both().show(ui, |ui| {
+                let (max_x, max_y) = get_tree_bounds(root);
+                // Ensure enough space
+                ui.set_min_size(egui::vec2(max_x + 100.0, max_y + 100.0));
+
+                let offset = egui::vec2(20.0, 20.0);
+
+                draw_viz_tree(ui, root, offset);
+            });
+        } else {
+            ui.label("No AST available. Fix compilation errors.");
+        }
+    }
+
+    fn format_operator(&self, op: &crate::types::Operator) -> String {
+        match op {
+            crate::types::Operator::ADD => "+".to_string(),
+            crate::types::Operator::SUB => "-".to_string(),
+            crate::types::Operator::MUL => "*".to_string(),
+            crate::types::Operator::DIV => "/".to_string(),
+            crate::types::Operator::EQL => "=".to_string(),
+            crate::types::Operator::NEQ => "#".to_string(),
+            crate::types::Operator::LSS => "<".to_string(),
+            crate::types::Operator::LEQ => "<=".to_string(),
+            crate::types::Operator::GTR => ">".to_string(),
+            crate::types::Operator::GEQ => ">=".to_string(),
+            crate::types::Operator::ODD => "odd".to_string(),
+            crate::types::Operator::NEG => "-".to_string(),
+            _ => format!("{:?}", op),
+        }
+    }
+
+    fn format_expr(&self, expr: &crate::ast::Expr) -> String {
+        match expr {
+            crate::ast::Expr::Binary { left, op, right } => {
+                format!(
+                    "({} {} {})",
+                    self.format_expr(left),
+                    self.format_operator(op),
+                    self.format_expr(right)
+                )
+            }
+            crate::ast::Expr::Unary { op, expr } => {
+                format!("({}{})", self.format_operator(op), self.format_expr(expr))
+            }
+            crate::ast::Expr::Number(n) => n.to_string(),
+            crate::ast::Expr::Identifier(id) => id.clone(),
+        }
+    }
+
+    fn format_condition(&self, cond: &crate::ast::Condition) -> String {
+        match cond {
+            crate::ast::Condition::Odd { expr } => {
+                format!("odd {}", self.format_expr(expr))
+            }
+            crate::ast::Condition::Compare { left, op, right } => {
+                format!(
+                    "{} {} {}",
+                    self.format_expr(left),
+                    self.format_operator(op),
+                    self.format_expr(right)
+                )
+            }
+        }
     }
 
     fn draw_block(&self, ui: &mut egui::Ui, block: &AstBlock, label: &str) {
@@ -204,6 +497,18 @@ impl Pl0Gui {
                     ui.label(block.vars.join(", "));
                 }
 
+                if !block.procedures.is_empty() {
+                    ui.label(egui::RichText::new("Procedures:").strong());
+                    for p in &block.procedures {
+                        let label = if p.params.is_empty() {
+                            format!("Procedure {}", p.name)
+                        } else {
+                            format!("Procedure {}({})", p.name, p.params.join(", "))
+                        };
+                        self.draw_block(ui, &p.block, &label);
+                    }
+                }
+
                 ui.separator();
                 self.draw_statement(ui, &block.statement);
             });
@@ -211,11 +516,20 @@ impl Pl0Gui {
 
     fn draw_statement(&self, ui: &mut egui::Ui, stmt: &Statement) {
         match stmt {
-            Statement::Assignment { name, expr: _ } => {
-                ui.label(format!("Assign: {} := ...", name));
+            Statement::Assignment { name, expr } => {
+                ui.label(format!("Assign: {} := {}", name, self.format_expr(expr)));
             }
-            Statement::Call { name, args: _ } => {
-                ui.label(format!("Call: {}", name));
+            Statement::Call { name, args } => {
+                if args.is_empty() {
+                    ui.label(format!("Call: {}", name));
+                } else {
+                    let args_str = args
+                        .iter()
+                        .map(|e| self.format_expr(e))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    ui.label(format!("Call: {}({})", name, args_str));
+                }
             }
             Statement::BeginEnd { statements } => {
                 egui::CollapsingHeader::new("Begin ... End")
@@ -227,32 +541,43 @@ impl Pl0Gui {
                     });
             }
             Statement::If {
-                condition: _,
+                condition,
                 then_stmt,
                 else_stmt,
             } => {
-                egui::CollapsingHeader::new("If ... Then")
-                    .default_open(true)
-                    .show(ui, |ui| {
-                        self.draw_statement(ui, then_stmt);
-                        if let Some(else_s) = else_stmt {
-                            ui.label("Else");
-                            self.draw_statement(ui, else_s);
-                        }
-                    });
+                egui::CollapsingHeader::new(format!(
+                    "If {} Then",
+                    self.format_condition(condition)
+                ))
+                .default_open(true)
+                .show(ui, |ui| {
+                    self.draw_statement(ui, then_stmt);
+                    if let Some(else_s) = else_stmt {
+                        ui.label("Else");
+                        self.draw_statement(ui, else_s);
+                    }
+                });
             }
-            Statement::While { condition: _, body } => {
-                egui::CollapsingHeader::new("While ... Do")
-                    .default_open(true)
-                    .show(ui, |ui| {
-                        self.draw_statement(ui, body);
-                    });
+            Statement::While { condition, body } => {
+                egui::CollapsingHeader::new(format!(
+                    "While {} Do",
+                    self.format_condition(condition)
+                ))
+                .default_open(true)
+                .show(ui, |ui| {
+                    self.draw_statement(ui, body);
+                });
             }
             Statement::Read { names } => {
                 ui.label(format!("Read: {}", names.join(", ")));
             }
-            Statement::Write { exprs: _ } => {
-                ui.label("Write: ...");
+            Statement::Write { exprs } => {
+                let exprs_str = exprs
+                    .iter()
+                    .map(|e| self.format_expr(e))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                ui.label(format!("Write: {}", exprs_str));
             }
             Statement::Empty => {
                 ui.label("Empty");
@@ -261,33 +586,66 @@ impl Pl0Gui {
     }
 
     fn show_optimization(&self, ui: &mut egui::Ui) {
-        ui.columns(2, |columns| {
-            columns[0].heading("Raw Bytecode");
-            egui::ScrollArea::vertical()
-                .id_salt("raw")
-                .show(&mut columns[0], |ui| {
-                    for (i, instr) in self.raw_code.iter().enumerate() {
-                        ui.monospace(format!("{:3}: {:?}", i, instr));
-                    }
-                });
+        let diffs = compute_diff(&self.raw_code, &self.opt_code);
 
-            columns[1].heading(format!(
-                "Optimized ({} -> {})",
-                self.raw_code.len(),
-                self.opt_code.len()
-            ));
-            egui::ScrollArea::vertical()
-                .id_salt("opt")
-                .show(&mut columns[1], |ui| {
-                    for (i, instr) in self.opt_code.iter().enumerate() {
-                        ui.monospace(format!("{:3}: {:?}", i, instr));
+        ui.heading(format!(
+            "Optimization Diff ({} -> {} instructions)",
+            self.raw_code.len(),
+            self.opt_code.len()
+        ));
+
+        egui::ScrollArea::vertical().show(ui, |ui| {
+            egui::Grid::new("diff_grid")
+                .striped(true)
+                .min_col_width(200.0)
+                .spacing([20.0, 4.0]) // Add some spacing between columns and rows
+                .show(ui, |ui| {
+                    ui.label(egui::RichText::new("Raw Bytecode").strong());
+                    ui.label(egui::RichText::new("Optimized Bytecode").strong());
+                    ui.end_row();
+
+                    for line in diffs {
+                        // Left Column (Raw)
+                        if let Some((i, instr)) = line.raw {
+                            let text = format!("{:3}: {:?} {}, {}", i, instr.f, instr.l, instr.a);
+                            if line.opt.is_none() {
+                                // Deleted - Red
+                                ui.label(
+                                    egui::RichText::new(text)
+                                        .color(egui::Color32::from_rgb(255, 100, 100)),
+                                );
+                            } else {
+                                // Unchanged
+                                ui.monospace(text);
+                            }
+                        } else {
+                            ui.label("");
+                        }
+
+                        // Right Column (Optimized)
+                        if let Some((i, instr)) = line.opt {
+                            let text = format!("{:3}: {:?} {}, {}", i, instr.f, instr.l, instr.a);
+                            if line.raw.is_none() {
+                                // Added - Green
+                                ui.label(
+                                    egui::RichText::new(text)
+                                        .color(egui::Color32::from_rgb(100, 255, 100)),
+                                );
+                            } else {
+                                // Unchanged
+                                ui.monospace(text);
+                            }
+                        } else {
+                            ui.label("");
+                        }
+                        ui.end_row();
                     }
                 });
         });
     }
 
     fn show_runtime(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
-        // Controls
+        // Controls Row 1: Actions & Settings
         ui.horizontal(|ui| {
             if ui.button("Step").clicked() {
                 self.vm.step();
@@ -299,12 +657,43 @@ impl Pl0Gui {
                 self.auto_run = !self.auto_run;
             }
             if ui.button("Reset").clicked() {
-                self.vm = VM::new(self.opt_code.clone());
+                let code_to_run = if self.use_optimized_vm {
+                    self.opt_code.clone()
+                } else {
+                    self.raw_code.clone()
+                };
+                self.vm = VM::new(code_to_run);
                 self.auto_run = false;
             }
 
             ui.separator();
+            if ui
+                .checkbox(&mut self.use_optimized_vm, "Use Optimized Code")
+                .changed()
+            {
+                let code_to_run = if self.use_optimized_vm {
+                    self.opt_code.clone()
+                } else {
+                    self.raw_code.clone()
+                };
+                self.vm = VM::new(code_to_run);
+                self.auto_run = false;
+            }
+        });
+
+        // Controls Row 2: Status & Registers
+        ui.horizontal(|ui| {
+            ui.label(egui::RichText::new("Registers:").strong());
+            ui.label(format!("PC: {:<3}", self.vm.p));
+            ui.label(format!("BP: {:<3}", self.vm.b));
+            ui.label(format!("SP: {:<3}", self.vm.t));
+            ui.label(format!("IR: {:?}", self.vm.i));
+
+            ui.separator();
             ui.label(format!("State: {:?}", self.vm.state));
+
+            ui.separator();
+            ui.label(format!("Total Instructions: {}", self.vm.instruction_count));
         });
 
         ui.separator();
@@ -322,6 +711,8 @@ impl Pl0Gui {
                             if i == self.vm.p {
                                 ui.label(
                                     egui::RichText::new(text)
+                                        .monospace()
+                                        .strong()
                                         .background_color(egui::Color32::YELLOW)
                                         .color(egui::Color32::BLACK),
                                 );
@@ -339,51 +730,156 @@ impl Pl0Gui {
                 egui::ScrollArea::vertical()
                     .id_salt("vm_stack")
                     .show(ui, |ui| {
-                        for (i, val) in self.vm.stack.iter().enumerate().take(self.vm.t + 5) {
-                            let mut text = format!("[{:3}] {}", i, val);
-                            if i == self.vm.b {
-                                text.push_str(" < BP");
-                            }
-                            if i == self.vm.t {
-                                text.push_str(" < SP");
-                            }
-                            ui.monospace(text);
-                        }
+                        egui::Grid::new("stack_grid")
+                            .striped(true)
+                            .spacing([10.0, 4.0])
+                            .min_col_width(40.0)
+                            .show(ui, |ui| {
+                                // Header
+                                ui.label(egui::RichText::new("Addr").strong().underline());
+                                ui.label(egui::RichText::new("Value").strong().underline());
+                                ui.label(egui::RichText::new("Tags").strong().underline());
+                                ui.end_row();
+
+                                // Content
+                                let limit = self.vm.t + 1;
+                                for (i, val) in self.vm.stack.iter().enumerate().take(limit) {
+                                    let is_bp = i == self.vm.b;
+                                    let is_sp = i == self.vm.t;
+
+                                    let mut addr_text =
+                                        egui::RichText::new(format!("{:03}", i)).monospace();
+                                    let mut val_text =
+                                        egui::RichText::new(val.to_string()).monospace();
+
+                                    if is_bp {
+                                        addr_text = addr_text.color(egui::Color32::LIGHT_BLUE);
+                                        val_text = val_text.strong();
+                                    }
+                                    if is_sp {
+                                        addr_text = addr_text.color(egui::Color32::LIGHT_RED);
+                                        val_text = val_text.strong();
+                                    }
+
+                                    ui.label(addr_text);
+                                    ui.label(val_text);
+
+                                    // Tags column
+                                    ui.horizontal(|ui| {
+                                        if is_bp {
+                                            ui.label(
+                                                egui::RichText::new(" BP ")
+                                                    .small()
+                                                    .background_color(egui::Color32::from_rgb(
+                                                        0, 100, 200,
+                                                    ))
+                                                    .color(egui::Color32::WHITE),
+                                            );
+                                        }
+                                        if is_sp {
+                                            ui.label(
+                                                egui::RichText::new(" SP ")
+                                                    .small()
+                                                    .background_color(egui::Color32::from_rgb(
+                                                        200, 50, 50,
+                                                    ))
+                                                    .color(egui::Color32::WHITE),
+                                            );
+                                        }
+                                    });
+                                    ui.end_row();
+                                }
+                            });
                     });
             });
 
             // 3. I/O View
             columns[2].vertical(|ui| {
-                ui.heading("Output");
-                egui::ScrollArea::vertical()
-                    .id_salt("vm_output")
-                    .max_height(200.0)
-                    .show(ui, |ui| {
-                        for line in &self.vm.output {
-                            ui.monospace(line);
-                        }
-                    });
+                ui.heading("I/O Console");
 
-                ui.separator();
-                ui.heading("Input");
-                ui.horizontal(|ui| {
-                    ui.text_edit_singleline(&mut self.input_buffer);
-                    if ui.button("Enter").clicked()
-                        || (ui.input(|i| i.key_pressed(egui::Key::Enter))
-                            && !self.input_buffer.is_empty())
-                    {
-                        if let Ok(val) = self.input_buffer.trim().parse::<i64>() {
-                            self.vm.input_queue.push(val);
-                            if self.vm.state == VMState::WaitingForInput {
-                                self.vm.state = VMState::Running;
+                egui::Frame::canvas(ui.style())
+                    .fill(egui::Color32::from_rgb(40, 44, 52)) // Dark console background
+                    .inner_margin(10.0)
+                    .show(ui, |ui| {
+                        // Output Area
+                        let footer_height = 30.0;
+                        let available_height = ui.available_height() - footer_height;
+
+                        egui::ScrollArea::vertical()
+                            .id_salt("vm_output")
+                            .max_height(available_height)
+                            .stick_to_bottom(true) // Auto-scroll to bottom
+                            .show(ui, |ui| {
+                                ui.set_min_width(ui.available_width());
+                                ui.set_min_height(available_height);
+
+                                for line in &self.vm.output {
+                                    ui.label(
+                                        egui::RichText::new(line)
+                                            .monospace()
+                                            .color(egui::Color32::LIGHT_GRAY),
+                                    );
+                                }
+
+                                if self.vm.state == VMState::WaitingForInput {
+                                    ui.label(
+                                        egui::RichText::new("? Waiting for input...")
+                                            .monospace()
+                                            .italics()
+                                            .color(egui::Color32::YELLOW),
+                                    );
+                                }
+                            });
+
+                        ui.separator();
+
+                        // Input Area
+                        ui.horizontal(|ui| {
+                            ui.label(
+                                egui::RichText::new(">")
+                                    .monospace()
+                                    .strong()
+                                    .color(egui::Color32::WHITE),
+                            );
+
+                            let response = ui.add(
+                                egui::TextEdit::singleline(&mut self.input_buffer)
+                                    .frame(false)
+                                    .desired_width(f32::INFINITY)
+                                    .text_color(egui::Color32::WHITE)
+                                    .font(egui::TextStyle::Monospace)
+                                    .hint_text("Enter number..."),
+                            );
+
+                            // Handle Enter key
+                            if (response.lost_focus()
+                                && ui.input(|i| i.key_pressed(egui::Key::Enter)))
+                                || (response.has_focus()
+                                    && ui.input(|i| i.key_pressed(egui::Key::Enter)))
+                            {
+                                if !self.input_buffer.is_empty() {
+                                    if let Ok(val) = self.input_buffer.trim().parse::<i64>() {
+                                        self.vm.input_queue.push(val);
+                                        // Echo input to output
+                                        self.vm.output.push(format!("> {}", val));
+
+                                        if self.vm.state == VMState::WaitingForInput {
+                                            self.vm.state = VMState::Running;
+                                        }
+                                        self.input_buffer.clear();
+
+                                        // Keep focus
+                                        response.request_focus();
+                                    }
+                                }
                             }
-                            self.input_buffer.clear();
-                        }
-                    }
-                });
-                if self.vm.state == VMState::WaitingForInput {
-                    ui.colored_label(egui::Color32::YELLOW, "Waiting for input...");
-                }
+
+                            // Auto-focus if waiting
+                            if self.vm.state == VMState::WaitingForInput && !response.has_focus() {
+                                response.request_focus();
+                            }
+                        });
+                    });
             });
         });
 
@@ -398,4 +894,256 @@ impl Pl0Gui {
             }
         }
     }
+}
+
+fn build_viz_tree(program: &Program) -> VizNode {
+    let mut root = VizNode::new("Program", egui::Color32::from_rgb(200, 200, 255));
+    root.children.push(build_block_node(&program.block));
+    root
+}
+
+fn build_block_node(block: &AstBlock) -> VizNode {
+    let mut node = VizNode::new("Block", egui::Color32::from_rgb(255, 200, 200));
+
+    // Consts
+    if !block.consts.is_empty() {
+        let mut consts_node = VizNode::new("Consts", egui::Color32::LIGHT_GRAY);
+        for c in &block.consts {
+            consts_node.children.push(VizNode::new(
+                format!("{}={}", c.name, c.value),
+                egui::Color32::WHITE,
+            ));
+        }
+        node.children.push(consts_node);
+    }
+
+    // Vars
+    if !block.vars.is_empty() {
+        let mut vars_node = VizNode::new("Vars", egui::Color32::LIGHT_GRAY);
+        for v in &block.vars {
+            vars_node
+                .children
+                .push(VizNode::new(v.clone(), egui::Color32::WHITE));
+        }
+        node.children.push(vars_node);
+    }
+
+    // Procedures
+    for p in &block.procedures {
+        let mut proc_node = VizNode::new(format!("Proc {}", p.name), egui::Color32::GOLD);
+        proc_node.children.push(build_block_node(&p.block));
+        node.children.push(proc_node);
+    }
+
+    // Statement
+    node.children.push(build_statement_node(&block.statement));
+
+    node
+}
+
+fn build_statement_node(stmt: &Statement) -> VizNode {
+    match stmt {
+        Statement::Assignment { name, expr } => {
+            let mut node = VizNode::new(":=", egui::Color32::LIGHT_GREEN);
+            node.children
+                .push(VizNode::new(name.clone(), egui::Color32::WHITE));
+            node.children.push(build_expr_node(expr));
+            node
+        }
+        Statement::Call { name, args } => {
+            let mut node = VizNode::new(format!("Call {}", name), egui::Color32::LIGHT_RED);
+            for arg in args {
+                node.children.push(build_expr_node(arg));
+            }
+            node
+        }
+        Statement::BeginEnd { statements } => {
+            let mut node = VizNode::new("Begin..End", egui::Color32::from_rgb(200, 200, 255));
+            for s in statements {
+                node.children.push(build_statement_node(s));
+            }
+            node
+        }
+        Statement::If {
+            condition,
+            then_stmt,
+            else_stmt,
+        } => {
+            let mut node = VizNode::new("If", egui::Color32::LIGHT_YELLOW);
+            node.children.push(build_condition_node(condition));
+            node.children.push(build_statement_node(then_stmt));
+            if let Some(else_s) = else_stmt {
+                node.children.push(build_statement_node(else_s));
+            }
+            node
+        }
+        Statement::While { condition, body } => {
+            let mut node = VizNode::new("While", egui::Color32::LIGHT_YELLOW);
+            node.children.push(build_condition_node(condition));
+            node.children.push(build_statement_node(body));
+            node
+        }
+        Statement::Read { names } => {
+            let mut node = VizNode::new("Read", egui::Color32::LIGHT_BLUE);
+            for name in names {
+                node.children
+                    .push(VizNode::new(name.clone(), egui::Color32::WHITE));
+            }
+            node
+        }
+        Statement::Write { exprs } => {
+            let mut node = VizNode::new("Write", egui::Color32::LIGHT_BLUE);
+            for expr in exprs {
+                node.children.push(build_expr_node(expr));
+            }
+            node
+        }
+        Statement::Empty => VizNode::new("Empty", egui::Color32::GRAY),
+    }
+}
+
+fn build_expr_node(expr: &crate::ast::Expr) -> VizNode {
+    match expr {
+        crate::ast::Expr::Binary { left, op, right } => {
+            let mut node = VizNode::new(format_op(op), egui::Color32::LIGHT_GREEN);
+            node.children.push(build_expr_node(left));
+            node.children.push(build_expr_node(right));
+            node
+        }
+        crate::ast::Expr::Unary { op, expr } => {
+            let mut node = VizNode::new(
+                format!("Unary {}", format_op(op)),
+                egui::Color32::LIGHT_GREEN,
+            );
+            node.children.push(build_expr_node(expr));
+            node
+        }
+        crate::ast::Expr::Number(n) => VizNode::new(n.to_string(), egui::Color32::WHITE),
+        crate::ast::Expr::Identifier(id) => VizNode::new(id.clone(), egui::Color32::WHITE),
+    }
+}
+
+fn build_condition_node(cond: &crate::ast::Condition) -> VizNode {
+    match cond {
+        crate::ast::Condition::Odd { expr } => {
+            let mut node = VizNode::new("Odd", egui::Color32::LIGHT_YELLOW);
+            node.children.push(build_expr_node(expr));
+            node
+        }
+        crate::ast::Condition::Compare { left, op, right } => {
+            let mut node = VizNode::new(format_op(op), egui::Color32::LIGHT_YELLOW);
+            node.children.push(build_expr_node(left));
+            node.children.push(build_expr_node(right));
+            node
+        }
+    }
+}
+
+fn format_op(op: &crate::types::Operator) -> String {
+    match op {
+        crate::types::Operator::ADD => "+".to_string(),
+        crate::types::Operator::SUB => "-".to_string(),
+        crate::types::Operator::MUL => "*".to_string(),
+        crate::types::Operator::DIV => "/".to_string(),
+        crate::types::Operator::EQL => "=".to_string(),
+        crate::types::Operator::NEQ => "#".to_string(),
+        crate::types::Operator::LSS => "<".to_string(),
+        crate::types::Operator::LEQ => "<=".to_string(),
+        crate::types::Operator::GTR => ">".to_string(),
+        crate::types::Operator::GEQ => ">=".to_string(),
+        crate::types::Operator::ODD => "odd".to_string(),
+        crate::types::Operator::NEG => "-".to_string(),
+        _ => format!("{:?}", op),
+    }
+}
+
+fn layout_viz_tree(node: &mut VizNode, depth: usize, next_x: &mut f32) {
+    let node_width = 100.0;
+    let node_height = 60.0;
+    let spacing_x = 20.0;
+
+    if node.children.is_empty() {
+        node.pos = egui::pos2(*next_x, depth as f32 * node_height);
+        node.width = node_width;
+        *next_x += node_width + spacing_x;
+    } else {
+        let start_x = *next_x;
+        for child in &mut node.children {
+            layout_viz_tree(child, depth + 1, next_x);
+        }
+
+        // Center parent over children
+        // If children are spread out, we want the parent to be in the middle of the range covered by children
+        let first_child_x = node.children.first().unwrap().pos.x;
+        let last_child_x = node.children.last().unwrap().pos.x;
+        let center_x = (first_child_x + last_child_x) / 2.0;
+
+        node.pos = egui::pos2(center_x, depth as f32 * node_height);
+        node.width = node_width;
+
+        // If the children didn't advance next_x enough (e.g. they were placed to the left of current next_x because of recursion logic?),
+        // actually next_x is always increasing in this simple algorithm.
+        // But we need to make sure we don't overlap with previous subtrees if we just center.
+        // The simple "next_x" approach guarantees no overlap between leaves.
+        // Parent centering is safe.
+    }
+}
+
+fn get_tree_bounds(node: &VizNode) -> (f32, f32) {
+    let mut max_x = node.pos.x + node.width;
+    let mut max_y = node.pos.y + 50.0;
+
+    for child in &node.children {
+        let (cx, cy) = get_tree_bounds(child);
+        max_x = max_x.max(cx);
+        max_y = max_y.max(cy);
+    }
+    (max_x, max_y)
+}
+
+fn draw_viz_tree(ui: &mut egui::Ui, node: &VizNode, offset: egui::Vec2) {
+    let node_size = egui::vec2(90.0, 30.0);
+    let node_pos = node.pos + offset;
+    let rect = egui::Rect::from_min_size(node_pos, node_size);
+
+    // Draw edges to children
+    for child in &node.children {
+        let child_pos = child.pos + offset;
+        let child_rect = egui::Rect::from_min_size(child_pos, node_size);
+
+        let start = rect.center_bottom();
+        let end = child_rect.center_top();
+
+        // Bezier curve for nicer edges
+        let control_point1 = start + egui::vec2(0.0, 20.0);
+        let control_point2 = end - egui::vec2(0.0, 20.0);
+
+        let cubic_bezier = egui::epaint::CubicBezierShape::from_points_stroke(
+            [start, control_point1, control_point2, end],
+            false,
+            egui::Color32::TRANSPARENT, // fill
+            egui::Stroke::new(1.5, egui::Color32::GRAY),
+        );
+        ui.painter().add(cubic_bezier);
+
+        draw_viz_tree(ui, child, offset);
+    }
+
+    // Draw node box
+    ui.painter().rect_filled(rect, 5.0, node.color);
+    ui.painter().rect_stroke(
+        rect,
+        5.0,
+        egui::Stroke::new(1.0, egui::Color32::BLACK),
+        egui::StrokeKind::Middle,
+    );
+
+    // Draw label
+    ui.painter().text(
+        rect.center(),
+        egui::Align2::CENTER_CENTER,
+        &node.label,
+        egui::FontId::proportional(14.0),
+        egui::Color32::BLACK,
+    );
 }

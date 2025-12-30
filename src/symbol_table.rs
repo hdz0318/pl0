@@ -18,6 +18,7 @@ impl Scope {
     }
 }
 
+#[derive(Clone)]
 pub struct SymbolTable {
     pub scopes: Vec<Scope>,
     pub current_scope_id: usize,

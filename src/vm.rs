@@ -19,6 +19,7 @@ pub struct VM {
     pub output: Vec<String>,
     pub input_queue: Vec<i64>,
     pub state: VMState,
+    pub instruction_count: usize,
 }
 
 impl VM {
@@ -33,6 +34,7 @@ impl VM {
             output: Vec::new(),
             input_queue: Vec::new(),
             state: VMState::Running,
+            instruction_count: 0,
         }
     }
 
@@ -58,6 +60,7 @@ impl VM {
         // Fetch instruction into I register
         self.i = self.code[self.p];
         self.p += 1;
+        self.instruction_count += 1;
 
         let ir = self.i; // Use local alias for convenience matching original code structure
 
