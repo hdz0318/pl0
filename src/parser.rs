@@ -276,6 +276,10 @@ impl<'a> Parser<'a> {
                     if self.lexer.current_token == TokenType::End {
                         break;
                     }
+                    if self.lexer.current_token == TokenType::Eof {
+                        self.error("Expected 'end'")?;
+                        return Err(());
+                    }
 
                     match self.statement() {
                         Ok(stmt) => {
