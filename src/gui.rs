@@ -195,6 +195,15 @@ end";
 
         match parser.parse() {
             Ok(mut program) => {
+                if !parser.errors.is_empty() {
+                    let err = format!("Parse Error: {:?}", parser.errors.first());
+                    self.status_message = err.clone();
+                    self.compile_error = Some(err);
+                    self.raw_code.clear();
+                    self.opt_code.clear();
+                    return;
+                }
+
                 // 1. Generate Raw Code
                 let mut raw_program = program.clone();
                 let mut sym_table = SymbolTable::new();

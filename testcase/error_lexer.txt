@@ -1,0 +1,14 @@
+program errors;
+var a, b;
+begin
+    a := 10;
+    a := a + ;
+	call ;
+    if a > 10 then
+        b := 20
+    else
+        b := 30;
+    write(a, b);
+	
+a := a + ;
+end
