@@ -1,0 +1,22 @@
+program loop_dag_test;
+var a, b, c, d, e, i, x, y, z;
+begin
+  a := 10;
+  b := 20;
+  c := a + b;
+  d := a + b;
+  e := a + b;
+  write(c);
+  write(d);
+  write(e);
+
+  x := 10;
+  y := 20;
+  i := 0;
+  while i < 5 do
+  begin
+    z := x + y;
+    write(z);
+    i := i + 1;
+  end;
+end.

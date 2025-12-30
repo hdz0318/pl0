@@ -1,4 +1,6 @@
+use pl0::codegen::CodeGenerator;
 use pl0::lexer::Lexer;
+use pl0::optimizer::{optimize, optimize_ast};
 use pl0::parser::Parser;
 use pl0::vm::{VM, VMState};
 use std::fs;
@@ -61,10 +63,20 @@ fn test_all_testcases() {
 
         // Catch panics during parsing
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            if parser.parse().is_err() || !parser.errors.is_empty() {
+            let parse_result = parser.parse();
+            if parse_result.is_err() || !parser.errors.is_empty() {
                 panic!("Parsing failed: {:?}", parser.errors);
             }
-            parser.generator.code
+            let mut program = parse_result.unwrap();
+
+            optimize_ast(&mut program);
+
+            let mut generator = CodeGenerator::new();
+            let code = generator
+                .generate(&program)
+                .expect("Code generation failed");
+
+            optimize(code)
         }));
 
         match result {

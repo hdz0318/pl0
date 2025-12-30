@@ -58,7 +58,7 @@ pub enum OpCode {
     WRT,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[repr(i64)]
 pub enum Operator {
     RET = 0,

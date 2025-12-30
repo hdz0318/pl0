@@ -1,4 +1,6 @@
+use pl0::codegen::CodeGenerator;
 use pl0::lexer::Lexer;
+use pl0::optimizer::{optimize, optimize_ast};
 use pl0::parser::Parser;
 use pl0::vm::VM;
 use std::env;
@@ -37,52 +39,60 @@ fn main() {
 
     println!("Compiling {}...", source_path);
 
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| parser.parse()));
+    // Parse to AST
+    let parse_result = parser.parse();
 
-    match result {
-        Ok(parse_res) => {
-            if parse_res.is_err() || !parser.errors.is_empty() {
-                eprintln!("Compilation failed.");
-                let lines: Vec<&str> = source_code.lines().collect();
-                for err in &parser.errors {
-                    eprintln!(
-                        "{}:{}:{}: error: {}",
-                        source_path, err.line, err.col, err.message
-                    );
-                    if err.line > 0 && err.line <= lines.len() {
-                        let line_content = lines[err.line - 1];
-                        eprintln!("    {}", line_content);
-                        let indent: String = line_content
-                            .chars()
-                            .take(err.col - 1)
-                            .map(|c| if c.is_whitespace() { c } else { ' ' })
-                            .collect();
-                        eprintln!("    {}^", indent);
-                    }
-                }
-                std::process::exit(1);
+    if parse_result.is_err() || !parser.errors.is_empty() {
+        eprintln!("Compilation failed.");
+        let lines: Vec<&str> = source_code.lines().collect();
+        for err in &parser.errors {
+            eprintln!(
+                "{}:{}:{}: error: {}",
+                source_path, err.line, err.col, err.message
+            );
+            if err.line > 0 && err.line <= lines.len() {
+                let line_content = lines[err.line - 1];
+                eprintln!("    {}", line_content);
+                let indent: String = line_content
+                    .chars()
+                    .take(err.col - 1)
+                    .map(|c| if c.is_whitespace() { c } else { ' ' })
+                    .collect();
+                eprintln!("    {}^", indent);
             }
         }
-        Err(_) => {
-            eprintln!("Internal Compiler Error (Panic).");
+        std::process::exit(1);
+    }
+
+    let mut program = parse_result.unwrap();
+
+    println!("Optimizing AST...");
+    optimize_ast(&mut program);
+
+    println!("Generating Code...");
+    let mut generator = CodeGenerator::new();
+    let code = match generator.generate(&program) {
+        Ok(c) => c,
+        Err(msg) => {
+            eprintln!("Code generation failed: {}", msg);
             std::process::exit(1);
         }
-    }
+    };
 
     println!(
         "Compilation successful! Generated {} instructions.",
-        parser.generator.code.len()
+        code.len()
     );
 
-    println!("Optimizing...");
-    parser.generator.code = pl0::optimizer::optimize(parser.generator.code);
+    println!("Optimizing Bytecode...");
+    let optimized_code = optimize(code);
     println!(
         "Optimization successful! Reduced to {} instructions.",
-        parser.generator.code.len()
+        optimized_code.len()
     );
 
     let mut file = File::create(output_path).expect("Failed to create output file");
-    for instr in &parser.generator.code {
+    for instr in &optimized_code {
         writeln!(file, "{:?} {} {}", instr.f, instr.l, instr.a)
             .expect("Failed to write instruction");
     }
@@ -90,6 +100,6 @@ fn main() {
     println!("Wrote assembly to {}", output_path);
 
     println!("Running {}...", source_path);
-    let mut vm = VM::new(parser.generator.code);
+    let mut vm = VM::new(optimized_code);
     vm.interpret();
 }
