@@ -1,0 +1,83 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-upload:
+    name: Build and upload assets
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - build: linux
+            os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - build: macos
+            os: macos-latest
+            target: x86_64-apple-darwin
+          - build: macos-arm
+            os: macos-latest
+            target: aarch64-apple-darwin
+          - build: windows
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install Linux dependencies
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libgtk-3-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libx11-dev libfontconfig1-dev
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: ${{ matrix.target }}
+
+    - name: Build
+      run: cargo build --release --target ${{ matrix.target }}
+
+    - name: Build archive
+      shell: bash
+      run: |
+        # Define binary names
+        bins=("pl0c" "pl0gui" "pl0vm")
+        
+        # Handle Windows extension
+        if [ "${{ matrix.os }}" = "windows-latest" ]; then
+          bin_ext=".exe"
+        else
+          bin_ext=""
+        fi
+
+        # Create a temporary directory for staging
+        staging="pl0-${{ github.event.release.tag_name }}-${{ matrix.target }}"
+        mkdir -p "$staging"
+
+        # Copy binaries
+        for bin in "${bins[@]}"; do
+          cp "target/${{ matrix.target }}/release/$bin$bin_ext" "$staging/"
+        done
+
+        # Archive
+        if [ "${{ matrix.os }}" = "windows-latest" ]; then
+          7z a "$staging.zip" "$staging"
+          echo "ASSET=$staging.zip" >> $GITHUB_ENV
+        else
+          tar czf "$staging.tar.gz" "$staging"
+          echo "ASSET=$staging.tar.gz" >> $GITHUB_ENV
+        fi
+
+    - name: Upload Release Asset
+      uses: softprops/action-gh-release@v1
+      if: startsWith(github.ref, 'refs/tags/')
+      with:
+        files: ${{ env.ASSET }}
