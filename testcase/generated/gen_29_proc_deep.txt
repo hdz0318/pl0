@@ -1,0 +1,16 @@
+program deep;
+procedure p1;
+  procedure p2;
+    procedure p3;
+    begin
+      write(3)
+    end;
+  begin
+    call p3
+  end;
+begin
+  call p2
+end;
+begin
+  call p1
+end.

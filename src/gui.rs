@@ -295,7 +295,21 @@ impl eframe::App for Pl0Gui {
 
 impl Pl0Gui {
     fn show_editor(&mut self, ui: &mut egui::Ui) {
-        ui.heading("Source Code");
+        ui.horizontal(|ui| {
+            ui.heading("Source Code");
+            if ui.button("📂 Open File...").clicked() {
+                if let Some(path) = rfd::FileDialog::new()
+                    .add_filter("PL/0 Source", &["pl0", "txt"])
+                    .pick_file()
+                {
+                    if let Ok(content) = std::fs::read_to_string(path) {
+                        self.source_code = content;
+                        self.compile();
+                    }
+                }
+            }
+        });
+
         let response = egui::ScrollArea::vertical().show(ui, |ui| {
             ui.add(
                 egui::TextEdit::multiline(&mut self.source_code)
@@ -417,12 +431,13 @@ impl Pl0Gui {
         if let Some(root) = &self.viz_root {
             egui::ScrollArea::both().show(ui, |ui| {
                 let (max_x, max_y) = get_tree_bounds(root);
-                // Ensure enough space
-                ui.set_min_size(egui::vec2(max_x + 100.0, max_y + 100.0));
+                let canvas_size = egui::vec2(max_x + 120.0, max_y + 120.0);
+                let (response, painter) = ui.allocate_painter(canvas_size, egui::Sense::hover());
 
-                let offset = egui::vec2(20.0, 20.0);
+                // Offset ensures a small margin inside the canvas
+                let offset = response.rect.min.to_vec2() + egui::vec2(20.0, 20.0);
 
-                draw_viz_tree(ui, root, offset);
+                draw_viz_tree(&painter, root, offset);
             });
         } else {
             ui.label("No AST available. Fix compilation errors.");
@@ -742,10 +757,14 @@ impl Pl0Gui {
                                 ui.end_row();
 
                                 // Content
-                                let limit = self.vm.t + 1;
+                                let limit = ((self.vm.t + 1).max(self.vm.b + 3))
+                                    .min(self.vm.stack.len());
                                 for (i, val) in self.vm.stack.iter().enumerate().take(limit) {
                                     let is_bp = i == self.vm.b;
                                     let is_sp = i == self.vm.t;
+                                    let is_sl = i == self.vm.b;
+                                    let is_dl = i == self.vm.b + 1;
+                                    let is_ra = i == self.vm.b + 2;
 
                                     let mut addr_text =
                                         egui::RichText::new(format!("{:03}", i)).monospace();
@@ -783,6 +802,30 @@ impl Pl0Gui {
                                                     .background_color(egui::Color32::from_rgb(
                                                         200, 50, 50,
                                                     ))
+                                                    .color(egui::Color32::WHITE),
+                                            );
+                                        }
+                                        if is_sl {
+                                            ui.label(
+                                                egui::RichText::new(" SL ")
+                                                    .small()
+                                                    .background_color(egui::Color32::GRAY)
+                                                    .color(egui::Color32::WHITE),
+                                            );
+                                        }
+                                        if is_dl {
+                                            ui.label(
+                                                egui::RichText::new(" DL ")
+                                                    .small()
+                                                    .background_color(egui::Color32::GRAY)
+                                                    .color(egui::Color32::WHITE),
+                                            );
+                                        }
+                                        if is_ra {
+                                            ui.label(
+                                                egui::RichText::new(" RA ")
+                                                    .small()
+                                                    .background_color(egui::Color32::GRAY)
                                                     .color(egui::Color32::WHITE),
                                             );
                                         }
@@ -1101,7 +1144,7 @@ fn get_tree_bounds(node: &VizNode) -> (f32, f32) {
     (max_x, max_y)
 }
 
-fn draw_viz_tree(ui: &mut egui::Ui, node: &VizNode, offset: egui::Vec2) {
+fn draw_viz_tree(painter: &egui::Painter, node: &VizNode, offset: egui::Vec2) {
     let node_size = egui::vec2(90.0, 30.0);
     let node_pos = node.pos + offset;
     let rect = egui::Rect::from_min_size(node_pos, node_size);
@@ -1124,14 +1167,14 @@ fn draw_viz_tree(ui: &mut egui::Ui, node: &VizNode, offset: egui::Vec2) {
             egui::Color32::TRANSPARENT, // fill
             egui::Stroke::new(1.5, egui::Color32::GRAY),
         );
-        ui.painter().add(cubic_bezier);
+        painter.add(cubic_bezier);
 
-        draw_viz_tree(ui, child, offset);
+        draw_viz_tree(painter, child, offset);
     }
 
     // Draw node box
-    ui.painter().rect_filled(rect, 5.0, node.color);
-    ui.painter().rect_stroke(
+    painter.rect_filled(rect, 5.0, node.color);
+    painter.rect_stroke(
         rect,
         5.0,
         egui::Stroke::new(1.0, egui::Color32::BLACK),
@@ -1139,7 +1182,7 @@ fn draw_viz_tree(ui: &mut egui::Ui, node: &VizNode, offset: egui::Vec2) {
     );
 
     // Draw label
-    ui.painter().text(
+    painter.text(
         rect.center(),
         egui::Align2::CENTER_CENTER,
         &node.label,

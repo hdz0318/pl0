@@ -1,0 +1,6 @@
+program err_dup_proc;
+procedure p; begin end;
+procedure p; begin end;
+begin
+  call p
+end.

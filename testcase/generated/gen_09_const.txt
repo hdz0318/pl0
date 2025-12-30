@@ -1,0 +1,7 @@
+program const_test;
+const c := 10;
+var a;
+begin
+  a := c + 1;
+  write(a)
+end.

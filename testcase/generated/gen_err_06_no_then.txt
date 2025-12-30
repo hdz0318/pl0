@@ -1,0 +1,6 @@
+program err_then;
+var a;
+begin
+  a := 1;
+  if a = 1 write(1)
+end.

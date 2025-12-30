@@ -1,0 +1,11 @@
+program if_while;
+var i;
+begin
+  i := 0;
+  if i = 0 then
+    while i < 3 do
+    begin
+      write(i);
+      i := i + 1
+    end
+end.

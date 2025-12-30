@@ -1,0 +1,12 @@
+program nested_proc;
+procedure p;
+  procedure q;
+  begin
+    write(1)
+  end;
+begin
+  call q
+end;
+begin
+  call p
+end.

@@ -1,0 +1,4 @@
+program err_undecl;
+begin
+  a := 1
+end.

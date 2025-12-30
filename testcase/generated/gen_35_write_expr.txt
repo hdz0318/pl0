@@ -1,0 +1,6 @@
+program write_expr;
+var a;
+begin
+  a := 10;
+  write(a * 2 + 5)
+end.

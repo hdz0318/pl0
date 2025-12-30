@@ -1,0 +1,6 @@
+program odd_test;
+var i;
+begin
+  i := 3;
+  if odd i then write(1) else write(0)
+end.

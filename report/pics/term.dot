@@ -1,0 +1,35 @@
+digraph "term" {
+  rankdir=LR;
+  splines=ortho;
+  nodesep=0.3;
+  ranksep=0.4;
+  node [fontname="Helvetica"];
+  edge [fontname="Helvetica"];
+  p1 [shape="point",width="0.01",height="0.01",label=""];
+  p2 [shape="point",width="0.01",height="0.01",label=""];
+  t3 [shape="box",label="<factor>"];
+  p4 [shape="point",width="0.01",height="0.01",label=""];
+  p5 [shape="point",width="0.01",height="0.01",label=""];
+  p6 [shape="point",width="0.01",height="0.01",label=""];
+  p7 [shape="point",width="0.01",height="0.01",label=""];
+  t8 [shape="box",label="<mop>"];
+  p9 [shape="point",width="0.01",height="0.01",label=""];
+  p10 [shape="point",width="0.01",height="0.01",label=""];
+  t11 [shape="box",label="<factor>"];
+  s12 [shape="circle",label="",width="0.2",height="0.2"];
+  e13 [shape="doublecircle",label="",width="0.2",height="0.2"];
+  p1 -> t3;
+  t3 -> p2;
+  p6 -> t8;
+  t8 -> p7;
+  p9 -> t11;
+  t11 -> p10;
+  p7 -> p9;
+  p4 -> p5 [style="(dash: "dashed")"];
+  p4 -> p6;
+  p10 -> p5;
+  p10 -> p6 [constraint="false"];
+  p2 -> p4;
+  s12 -> p1;
+  p5 -> e13;
+}

@@ -1,0 +1,8 @@
+program proc_args;
+procedure p(x, y);
+begin
+  write(x + y)
+end;
+begin
+  call p(10, 20)
+end.

@@ -1,0 +1,8 @@
+program div;
+var a, b, c;
+begin
+  a := 20;
+  b := 10;
+  c := a / b;
+  write(c)
+end.

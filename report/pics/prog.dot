@@ -1,0 +1,35 @@
+digraph "prog" {
+  rankdir=LR;
+  splines=ortho;
+  nodesep=0.3;
+  ranksep=0.4;
+  node [fontname="Helvetica"];
+  edge [fontname="Helvetica"];
+  p1 [shape="point",width="0.01",height="0.01",label=""];
+  p2 [shape="point",width="0.01",height="0.01",label=""];
+  t3 [shape="box",style="rounded",label="program"];
+  p4 [shape="point",width="0.01",height="0.01",label=""];
+  p5 [shape="point",width="0.01",height="0.01",label=""];
+  t6 [shape="box",label="<id>"];
+  p7 [shape="point",width="0.01",height="0.01",label=""];
+  p8 [shape="point",width="0.01",height="0.01",label=""];
+  t9 [shape="box",style="rounded",label=";"];
+  p10 [shape="point",width="0.01",height="0.01",label=""];
+  p11 [shape="point",width="0.01",height="0.01",label=""];
+  t12 [shape="box",label="<block>"];
+  s13 [shape="circle",label="",width="0.2",height="0.2"];
+  e14 [shape="doublecircle",label="",width="0.2",height="0.2"];
+  p1 -> t3;
+  t3 -> p2;
+  p4 -> t6;
+  t6 -> p5;
+  p7 -> t9;
+  t9 -> p8;
+  p10 -> t12;
+  t12 -> p11;
+  p2 -> p4;
+  p5 -> p7;
+  p8 -> p10;
+  s13 -> p1;
+  p11 -> e14;
+}

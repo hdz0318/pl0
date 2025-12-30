@@ -1,0 +1,6 @@
+program if_else;
+var a;
+begin
+  a := 10;
+  if a = 20 then write(0) else write(1)
+end.

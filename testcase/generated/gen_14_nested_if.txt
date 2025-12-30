@@ -1,0 +1,9 @@
+program nested_if;
+var a, b;
+begin
+  a := 10;
+  b := 20;
+  if a = 10 then
+    if b = 20 then
+      write(1)
+end.

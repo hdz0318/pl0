@@ -1,0 +1,6 @@
+program if_test;
+var a;
+begin
+  a := 10;
+  if a = 10 then write(1)
+end.

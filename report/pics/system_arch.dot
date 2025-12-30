@@ -1,0 +1,18 @@
+digraph "system_arch" {
+  rankdir=LR;
+  nodesep=0.5;
+  ranksep=0.6;
+  node [shape=box, style="rounded,filled", fillcolor="#F7F7F7", fontname="Microsoft YaHei"];
+  edge [fontname="Microsoft YaHei"];
+  Source [label="源代码"];
+  Lexer [label="词法分析"];
+  Parser [label="语法分析/符号表/代码生成"];
+  VM [label="虚拟机"];
+  TUI [label="TUI输出"];
+  Err [label="错误处理", shape=box, style="(dash: "dashed")", fillcolor="#FFFFFF"];
+
+  Source -> Lexer -> Parser -> VM -> TUI;
+  Err -> Lexer [style=(dash: "dashed"), arrowhead=none];
+  Err -> Parser [style=(dash: "dashed"), arrowhead=none];
+  Err -> VM [style=(dash: "dashed"), arrowhead=none];
+}

@@ -1,0 +1,9 @@
+program recursion;
+var n;
+procedure fact(k);
+begin
+  if k > 0 then call fact(k - 1)
+end;
+begin
+  call fact(3)
+end.

@@ -1,0 +1,11 @@
+program access_global;
+var g;
+procedure p;
+begin
+  g := 10
+end;
+begin
+  g := 0;
+  call p;
+  write(g)
+end.

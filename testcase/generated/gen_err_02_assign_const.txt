@@ -1,0 +1,5 @@
+program err_const;
+const a := 1;
+begin
+  a := 2
+end.

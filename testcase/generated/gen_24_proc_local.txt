@@ -1,0 +1,10 @@
+program proc_local;
+procedure p;
+var a;
+begin
+  a := 10;
+  write(a)
+end;
+begin
+  call p
+end.

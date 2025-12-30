@@ -1,0 +1,5 @@
+program err_semi;
+var a
+begin
+  a := 1
+end.

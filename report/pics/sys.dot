@@ -1,0 +1,26 @@
+digraph PL0_System {
+  rankdir=LR;
+  node [shape=box];
+
+  User [label="User / CLI"];
+  Main [label="main.rs\n入口/参数解析/读取源代码"];
+  Lexer [label="lexer.rs\n词法分析"];
+  Parser [label="parser.rs\n语法分析+生成P-code"];
+  Types [label="types.rs\nToken/Instruction/Opcode/Symbol"];
+  VM [label="vm.rs\nP-code虚拟机"];
+  TUI [label="tui_interface.rs\n终端调试UI"];
+  Program [label="PL/0源程序"];
+  Output [label="运行输出/交互输入"];
+
+  User -> Main;
+  Program -> Main;
+  Main -> Lexer;
+  Lexer -> Parser;
+  Parser -> Types;
+  Parser -> VM [label="生成 code"];
+  VM -> Output;
+
+  Main -> TUI [label="--tui 模式"];
+  TUI -> VM [label="step/auto-run"];
+  TUI -> Output;
+}

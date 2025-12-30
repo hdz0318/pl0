@@ -1,0 +1,6 @@
+program max_int;
+var a;
+begin
+  a := 2147483647;
+  write(a)
+end.

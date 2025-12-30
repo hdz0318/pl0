@@ -1,0 +1,5 @@
+program err_lex;
+var a@;
+begin
+  a := 1
+end.

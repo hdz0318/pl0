@@ -1,0 +1,15 @@
+program nested_while;
+var i, j;
+begin
+  i := 0;
+  while i < 2 do
+  begin
+    j := 0;
+    while j < 2 do
+    begin
+      write(i, j);
+      j := j + 1
+    end;
+    i := i + 1
+  end
+end.

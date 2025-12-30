@@ -1,0 +1,7 @@
+program assign;
+var a, b;
+begin
+  a := 1;
+  b := a;
+  write(b)
+end.

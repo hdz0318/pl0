@@ -1,0 +1,15 @@
+program scope_mixed;
+const c := 100;
+var v;
+procedure p;
+const c := 10;
+var v;
+begin
+  v := c;
+  write(v)
+end;
+begin
+  v := c;
+  call p;
+  write(v)
+end.

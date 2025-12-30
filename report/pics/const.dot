@@ -1,0 +1,29 @@
+digraph "const" {
+  rankdir=LR;
+  splines=ortho;
+  nodesep=0.3;
+  ranksep=0.4;
+  node [fontname="Helvetica"];
+  edge [fontname="Helvetica"];
+  p1 [shape="point",width="0.01",height="0.01",label=""];
+  p2 [shape="point",width="0.01",height="0.01",label=""];
+  t3 [shape="box",label="<id>"];
+  p4 [shape="point",width="0.01",height="0.01",label=""];
+  p5 [shape="point",width="0.01",height="0.01",label=""];
+  t6 [shape="box",style="rounded",label=":="];
+  p7 [shape="point",width="0.01",height="0.01",label=""];
+  p8 [shape="point",width="0.01",height="0.01",label=""];
+  t9 [shape="box",label="<integer>"];
+  s10 [shape="circle",label="",width="0.2",height="0.2"];
+  e11 [shape="doublecircle",label="",width="0.2",height="0.2"];
+  p1 -> t3;
+  t3 -> p2;
+  p4 -> t6;
+  t6 -> p5;
+  p7 -> t9;
+  t9 -> p8;
+  p2 -> p4;
+  p5 -> p7;
+  s10 -> p1;
+  p8 -> e11;
+}

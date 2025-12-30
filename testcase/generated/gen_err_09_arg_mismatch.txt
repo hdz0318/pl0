@@ -1,0 +1,8 @@
+program err_arg;
+procedure p(x);
+begin
+  write(x)
+end;
+begin
+  call p(1, 2)
+end.

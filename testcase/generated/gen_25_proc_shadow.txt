@@ -1,0 +1,13 @@
+program proc_shadow;
+var a;
+procedure p;
+var a;
+begin
+  a := 20;
+  write(a)
+end;
+begin
+  a := 10;
+  call p;
+  write(a)
+end.

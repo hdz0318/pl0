@@ -1,0 +1,8 @@
+program proc_arg;
+procedure p(x);
+begin
+  write(x)
+end;
+begin
+  call p(10)
+end.

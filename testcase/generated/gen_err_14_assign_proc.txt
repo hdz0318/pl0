@@ -1,0 +1,5 @@
+program err_assign_proc;
+procedure p; begin end;
+begin
+  p := 1
+end.

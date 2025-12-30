@@ -1,0 +1,7 @@
+program neq_brackets;
+var a, b;
+begin
+  a := 10;
+  b := 20;
+  if a <> b then write(1)
+end.

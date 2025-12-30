@@ -1,0 +1,9 @@
+program multi_call;
+procedure p;
+begin
+  write(1)
+end;
+begin
+  call p;
+  call p
+end.

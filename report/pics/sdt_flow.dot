@@ -1,0 +1,15 @@
+digraph "sdt_flow" {
+  rankdir=LR;
+  nodesep=0.5;
+  ranksep=0.6;
+  node [shape=box, style="rounded,filled", fillcolor="#F7F7F7", fontname="Microsoft YaHei"];
+  edge [fontname="Microsoft YaHei"];
+  Tokens [label="记号流"];
+  Parse [label="递归下降语法分析"];
+  Sym [label="符号表维护"];
+  Sem [label="语义动作执行"];
+  Code [label="生成目标代码"];
+
+  Tokens -> Parse -> Sem -> Code;
+  Parse -> Sym [style=(dash: "dashed"), arrowhead=none];
+}

@@ -1,0 +1,14 @@
+digraph "lexer_flow" {
+  rankdir=LR;
+  nodesep=0.5;
+  ranksep=0.6;
+  node [shape=box, style="rounded,filled", fillcolor="#F7F7F7", fontname="Microsoft YaHei"];
+  edge [fontname="Microsoft YaHei"];
+  Input [label="源代码字符流"];
+  Skip [label="跳过空白/换行"];
+  Scan [label="识别标识符/关键字/数字"];
+  Token [label="生成Token"];
+  Output [label="记号流输出"];
+
+  Input -> Skip -> Scan -> Token -> Output;
+}

@@ -1,0 +1,6 @@
+program mixed;
+var a;
+begin
+  a := 10 + 20 * 30;
+  write(a)
+end.

@@ -1,0 +1,6 @@
+program long_id;
+var thisisalongidentifier;
+begin
+  thisisalongidentifier := 10;
+  write(thisisalongidentifier)
+end.

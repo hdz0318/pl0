@@ -1,0 +1,10 @@
+program scope_var;
+procedure p;
+var v;
+begin
+  v := 10;
+  write(v)
+end;
+begin
+  call p
+end.

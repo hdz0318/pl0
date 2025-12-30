@@ -1,0 +1,4 @@
+program err_end;
+begin
+  write(1)
+.

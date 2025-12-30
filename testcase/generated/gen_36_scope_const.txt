@@ -1,0 +1,9 @@
+program scope_const;
+procedure p;
+const c := 10;
+begin
+  write(c)
+end;
+begin
+  call p
+end.

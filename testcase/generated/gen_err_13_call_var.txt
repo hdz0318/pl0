@@ -1,0 +1,5 @@
+program err_call_var;
+var a;
+begin
+  call a
+end.

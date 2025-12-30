@@ -1,0 +1,5 @@
+program err_factor;
+var a;
+begin
+  a := (1 + )
+end.
