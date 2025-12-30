@@ -1,10 +1,10 @@
 pub mod ast;
 pub mod codegen;
+pub mod gui;
 pub mod lexer;
 pub mod optimizer;
 pub mod parser;
 pub mod semantic;
 pub mod symbol_table;
-pub mod tui_interface;
 pub mod types;
 pub mod vm;
