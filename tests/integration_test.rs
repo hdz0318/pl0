@@ -2,6 +2,8 @@ use pl0::codegen::CodeGenerator;
 use pl0::lexer::Lexer;
 use pl0::optimizer::{optimize, optimize_ast};
 use pl0::parser::Parser;
+use pl0::semantic::SemanticAnalyzer;
+use pl0::symbol_table::SymbolTable;
 use pl0::vm::{VM, VMState};
 use std::fs;
 use std::path::Path;
@@ -69,12 +71,16 @@ fn test_all_testcases() {
             }
             let mut program = parse_result.unwrap();
 
+            let mut symbol_table = SymbolTable::new();
+            let mut semantic_analyzer = SemanticAnalyzer::new(&mut symbol_table);
+            semantic_analyzer
+                .analyze(&mut program)
+                .expect("Semantic analysis failed");
+
             optimize_ast(&mut program);
 
             let mut generator = CodeGenerator::new();
-            let code = generator
-                .generate(&program)
-                .expect("Code generation failed");
+            let code = generator.generate(&program, &mut symbol_table);
 
             optimize(code)
         }));
