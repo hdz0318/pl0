@@ -1,6 +1,6 @@
 use pl0::codegen::CodeGenerator;
 use pl0::lexer::Lexer;
-use pl0::optimizer::{optimize, optimize_ast};
+use pl0::optimizer::optimize_ast;
 use pl0::parser::Parser;
 use pl0::semantic::SemanticAnalyzer;
 use pl0::symbol_table::SymbolTable;
@@ -103,17 +103,7 @@ fn main() {
         code.len()
     );
 
-    let final_code = if use_optimization {
-        println!("Optimizing Bytecode...");
-        let optimized_code = optimize(code);
-        println!(
-            "Optimization successful! Reduced to {} instructions.",
-            optimized_code.len()
-        );
-        optimized_code
-    } else {
-        code
-    };
+    let final_code = code;
 
     let mut file = File::create(output_path).expect("Failed to create output file");
     for instr in &final_code {

@@ -1,10 +1,11 @@
 use crate::ast::{Block as AstBlock, Program, Statement};
 use crate::codegen::CodeGenerator;
 use crate::lexer::Lexer;
-use crate::optimizer::{optimize, optimize_ast};
+use crate::optimizer::optimize_ast;
 use crate::parser::Parser;
+use crate::semantic::SemanticAnalyzer;
 use crate::symbol_table::SymbolTable;
-use crate::types::{Instruction, OpCode};
+use crate::types::Instruction;
 use crate::vm::{VM, VMState};
 use eframe::egui;
 use std::time::{Duration, Instant};
@@ -37,33 +38,19 @@ pub struct Pl0Gui {
 }
 
 impl Pl0Gui {
-    pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
+    pub fn new(_cc: &eframe::CreationContext<'_>) -> Self {
         // Customize fonts if needed
         // cc.egui_ctx.set_fonts(...);
 
-        let default_code = "const m = 7, n = 85;
-var x, y, z, q, r;
-
-procedure multiply;
-var a, b;
+        let default_code = "program test1;
+const a := 10, b := 20;
+var x, y, z;
 begin
-  a := x;
-  b := y;
-  z := 0;
-  while b > 0 do
-  begin
-    if b / 2 * 2 # b then z := z + a;
-    a := 2 * a;
-    b := b / 2
-  end
-end;
-
-begin
-  x := m;
-  y := n;
-  call multiply;
-  write(z)
-end.";
+  read(x);
+  y := a * x + b;
+  z := y / 2;
+  write(x, y, z)
+end";
 
         let mut app = Self {
             source_code: default_code.to_string(),
@@ -91,21 +78,40 @@ end.";
 
         match parser.parse() {
             Ok(mut program) => {
-                self.ast = Some(program.clone());
-
                 // 1. Generate Raw Code
+                let mut raw_program = program.clone();
                 let mut sym_table = SymbolTable::new();
+                let mut analyzer = SemanticAnalyzer::new(&mut sym_table);
+
+                if let Err(e) = analyzer.analyze(&mut raw_program) {
+                    let err_msg = format!("Semantic Error: {:?}", e);
+                    self.status_message = err_msg.clone();
+                    self.compile_error = Some(err_msg);
+                    return;
+                }
+
+                self.ast = Some(raw_program.clone());
+
                 let mut generator = CodeGenerator::new();
-                self.raw_code = generator.generate(&program, &mut sym_table);
+                self.raw_code = generator.generate(&raw_program, &mut sym_table);
 
                 // 2. Optimize AST & Generate Optimized Code
                 optimize_ast(&mut program);
                 let mut opt_sym_table = SymbolTable::new();
+                let mut opt_analyzer = SemanticAnalyzer::new(&mut opt_sym_table);
+
+                if let Err(e) = opt_analyzer.analyze(&mut program) {
+                    let err_msg = format!("Semantic Error (Opt): {:?}", e);
+                    self.status_message = err_msg.clone();
+                    self.compile_error = Some(err_msg);
+                    return;
+                }
+
                 let mut opt_generator = CodeGenerator::new();
                 let code_from_ast = opt_generator.generate(&program, &mut opt_sym_table);
 
-                // 3. Peephole Optimization
-                self.opt_code = optimize(code_from_ast);
+                // 3. Peephole Optimization (Removed)
+                self.opt_code = code_from_ast;
 
                 // 4. Initialize VM with Optimized Code
                 self.vm = VM::new(self.opt_code.clone());
@@ -331,7 +337,7 @@ impl Pl0Gui {
             columns[1].vertical(|ui| {
                 ui.heading("Stack");
                 egui::ScrollArea::vertical()
-                    .id_source("vm_stack")
+                    .id_salt("vm_stack")
                     .show(ui, |ui| {
                         for (i, val) in self.vm.stack.iter().enumerate().take(self.vm.t + 5) {
                             let mut text = format!("[{:3}] {}", i, val);
@@ -350,7 +356,7 @@ impl Pl0Gui {
             columns[2].vertical(|ui| {
                 ui.heading("Output");
                 egui::ScrollArea::vertical()
-                    .id_source("vm_output")
+                    .id_salt("vm_output")
                     .max_height(200.0)
                     .show(ui, |ui| {
                         for line in &self.vm.output {
